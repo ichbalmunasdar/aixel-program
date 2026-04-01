@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AiXel Program — Concept Graph</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: #0F172A;
+    color: #E2E8F0;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  header {
+    text-align: center;
+    padding: 36px 20px 20px;
+  }
+  header .badge {
+    display: inline-block;
+    background: rgba(14,116,144,.25);
+    border: 1px solid #0E7490;
+    color: #67E8F9;
+    font-size: .72rem;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    padding: 4px 14px;
+    border-radius: 20px;
+    margin-bottom: 14px;
+  }
+  header h1 { font-size: 2rem; font-weight: 800; color: #fff; letter-spacing: -.02em; }
+  header h1 span { color: #22D3EE; }
+  header p { color: #94A3B8; font-size: .9rem; margin-top: 6px; }
+
+  .graph-wrap {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+    position: relative;
+  }
+
+  /* -------- SVG CANVAS -------- */
+  svg.concept-map {
+    width: 100%;
+    height: auto;
+    display: block;
+  }
+
+  /* -------- LEGEND -------- */
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    justify-content: center;
+    padding: 20px 20px 40px;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: .8rem;
+    color: #CBD5E1;
+  }
+  .legend-dot {
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* -------- NODE TOOLTIPS -------- */
+  .node-group { cursor: pointer; }
+  .node-group:hover .node-card { filter: brightness(1.2); }
+  .node-group .tooltip {
+    opacity: 0;
+    transition: opacity .2s;
+    pointer-events: none;
+  }
+  .node-group:hover .tooltip { opacity: 1; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="badge">🤖 Talentlytica</div>
+  <h1><span>AiXel</span> Program</h1>
+  <p>Concept Graph — AI Excellence Acceleration Program</p>
+</header>
+
+<div class="graph-wrap">
+<svg class="concept-map" viewBox="0 0 1100 820" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Gradients -->
+    <radialGradient id="grad-center" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#0E7490"/>
+      <stop offset="100%" stop-color="#0A4F62"/>
+    </radialGradient>
+    <radialGradient id="grad-criteria" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#1D4ED8"/>
+      <stop offset="100%" stop-color="#1E3A8A"/>
+    </radialGradient>
+    <radialGradient id="grad-support" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#0F766E"/>
+      <stop offset="100%" stop-color="#064E3B"/>
+    </radialGradient>
+    <radialGradient id="grad-obligation" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#7C3AED"/>
+      <stop offset="100%" stop-color="#4C1D95"/>
+    </radialGradient>
+    <radialGradient id="grad-benefit" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#B45309"/>
+      <stop offset="100%" stop-color="#78350F"/>
+    </radialGradient>
+    <radialGradient id="grad-community" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#BE185D"/>
+      <stop offset="100%" stop-color="#831843"/>
+    </radialGradient>
+    <radialGradient id="grad-timeline" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#1E40AF"/>
+      <stop offset="100%" stop-color="#1e3a5f"/>
+    </radialGradient>
+
+    <!-- Glow filters -->
+    <filter id="glow-teal">
+      <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+      <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="glow-gold">
+      <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+      <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="shadow">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000" flood-opacity=".4"/>
+    </filter>
+
+    <!-- Arrow markers -->
+    <marker id="arrow-teal" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#22D3EE" opacity=".7"/>
+    </marker>
+    <marker id="arrow-blue" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#60A5FA" opacity=".7"/>
+    </marker>
+    <marker id="arrow-green" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#34D399" opacity=".7"/>
+    </marker>
+    <marker id="arrow-purple" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#A78BFA" opacity=".7"/>
+    </marker>
+    <marker id="arrow-gold" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#FCD34D" opacity=".7"/>
+    </marker>
+    <marker id="arrow-pink" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#F472B6" opacity=".7"/>
+    </marker>
+  </defs>
+
+  <!-- ==================== BACKGROUND RINGS ==================== -->
+  <circle cx="550" cy="410" r="300" fill="none" stroke="#1E293B" stroke-width="1" stroke-dasharray="6,8" opacity=".5"/>
+  <circle cx="550" cy="410" r="180" fill="none" stroke="#1E293B" stroke-width="1" stroke-dasharray="4,6" opacity=".4"/>
+
+  <!-- ==================== CONNECTOR LINES ==================== -->
+
+  <!-- Center → Kriteria Peserta -->
+  <line x1="550" y1="362" x2="550" y2="228" stroke="#60A5FA" stroke-width="1.5" stroke-dasharray="5,4" opacity=".6" marker-end="url(#arrow-blue)"/>
+
+  <!-- Center → Dukungan -->
+  <line x1="502" y1="385" x2="350" y2="300" stroke="#34D399" stroke-width="1.5" stroke-dasharray="5,4" opacity=".6" marker-end="url(#arrow-green)"/>
+
+  <!-- Center → Kewajiban -->
+  <line x1="502" y1="435" x2="340" y2="530" stroke="#A78BFA" stroke-width="1.5" stroke-dasharray="5,4" opacity=".6" marker-end="url(#arrow-purple)"/>
+
+  <!-- Center → Benefit -->
+  <line x1="598" y1="435" x2="760" y2="530" stroke="#FCD34D" stroke-width="1.5" stroke-dasharray="5,4" opacity=".6" marker-end="url(#arrow-gold)"/>
+
+  <!-- Center → Komunitas -->
+  <line x1="598" y1="385" x2="750" y2="300" stroke="#F472B6" stroke-width="1.5" stroke-dasharray="5,4" opacity=".6" marker-end="url(#arrow-pink)"/>
+
+  <!-- Center → Timeline -->
+  <line x1="550" y1="460" x2="550" y2="590" stroke="#22D3EE" stroke-width="1.5" stroke-dasharray="5,4" opacity=".6" marker-end="url(#arrow-teal)"/>
+
+  <!-- Kriteria → children -->
+  <line x1="480" y1="185" x2="338" y2="120" stroke="#60A5FA" stroke-width="1" opacity=".4"/>
+  <line x1="550" y1="175" x2="550" y2="108" stroke="#60A5FA" stroke-width="1" opacity=".4"/>
+  <line x1="620" y1="185" x2="762" y2="120" stroke="#60A5FA" stroke-width="1" opacity=".4"/>
+
+  <!-- Dukungan → children -->
+  <line x1="270" y1="282" x2="185" y2="218" stroke="#34D399" stroke-width="1" opacity=".4"/>
+  <line x1="255" y1="305" x2="148" y2="335" stroke="#34D399" stroke-width="1" opacity=".4"/>
+  <line x1="265" y1="328" x2="175" y2="425" stroke="#34D399" stroke-width="1" opacity=".4"/>
+  <line x1="288" y1="340" x2="220" y2="478" stroke="#34D399" stroke-width="1" opacity=".4"/>
+
+  <!-- Kewajiban → children -->
+  <line x1="280" y1="545" x2="190" y2="618" stroke="#A78BFA" stroke-width="1" opacity=".4"/>
+  <line x1="300" y1="558" x2="270" y2="650" stroke="#A78BFA" stroke-width="1" opacity=".4"/>
+  <line x1="335" y1="565" x2="380" y2="650" stroke="#A78BFA" stroke-width="1" opacity=".4"/>
+
+  <!-- Benefit → children -->
+  <line x1="820" y1="545" x2="910" y2="618" stroke="#FCD34D" stroke-width="1" opacity=".4"/>
+  <line x1="800" y1="558" x2="830" y2="650" stroke="#FCD34D" stroke-width="1" opacity=".4"/>
+
+  <!-- Komunitas → children -->
+  <line x1="830" y1="282" x2="920" y2="218" stroke="#F472B6" stroke-width="1" opacity=".4"/>
+  <line x1="845" y1="305" x2="955" y2="335" stroke="#F472B6" stroke-width="1" opacity=".4"/>
+  <line x1="840" y1="328" x2="928" y2="420" stroke="#F472B6" stroke-width="1" opacity=".4"/>
+
+  <!-- Timeline steps -->
+  <line x1="480" y1="620" x2="370" y2="680" stroke="#22D3EE" stroke-width="1" opacity=".4"/>
+  <line x1="500" y1="628" x2="440" y2="718" stroke="#22D3EE" stroke-width="1" opacity=".4"/>
+  <line x1="550" y1="632" x2="550" y2="722" stroke="#22D3EE" stroke-width="1" opacity=".4"/>
+  <line x1="600" y1="628" x2="660" y2="718" stroke="#22D3EE" stroke-width="1" opacity=".4"/>
+  <line x1="620" y1="620" x2="730" y2="680" stroke="#22D3EE" stroke-width="1" opacity=".4"/>
+
+
+  <!-- ==================== CENTER NODE ==================== -->
+  <g filter="url(#glow-teal)">
+    <ellipse cx="550" cy="410" rx="90" ry="60" fill="url(#grad-center)" stroke="#22D3EE" stroke-width="2"/>
+  </g>
+  <text x="550" y="402" text-anchor="middle" font-size="22" font-weight="800" fill="#FFFFFF" font-family="Arial">AiXel</text>
+  <text x="550" y="420" text-anchor="middle" font-size="9" fill="#BAE6FD" font-family="Arial">AI Excellence</text>
+  <text x="550" y="432" text-anchor="middle" font-size="9" fill="#BAE6FD" font-family="Arial">Acceleration Program</text>
+
+  <!-- ==================== LEVEL 1 NODES ==================== -->
+
+  <!-- Kriteria Peserta (TOP) -->
+  <g filter="url(#shadow)">
+    <rect x="460" y="175" width="180" height="52" rx="10" fill="url(#grad-criteria)" stroke="#60A5FA" stroke-width="1.5"/>
+  </g>
+  <text x="550" y="196" text-anchor="middle" font-size="11" font-weight="700" fill="#FFFFFF" font-family="Arial">Kriteria Peserta</text>
+  <text x="550" y="212" text-anchor="middle" font-size="9" fill="#BAE6FD" font-family="Arial">Syarat keikutsertaan program</text>
+  <text x="550" y="224" text-anchor="middle" font-size="8" fill="#93C5FD" font-family="Arial">3 kriteria utama</text>
+
+  <!-- Dukungan (LEFT-TOP) -->
+  <g filter="url(#shadow)">
+    <rect x="180" y="268" width="175" height="52" rx="10" fill="url(#grad-support)" stroke="#34D399" stroke-width="1.5"/>
+  </g>
+  <text x="267" y="289" text-anchor="middle" font-size="11" font-weight="700" fill="#FFFFFF" font-family="Arial">Dukungan</text>
+  <text x="267" y="305" text-anchor="middle" font-size="9" fill="#A7F3D0" font-family="Arial">Support dari Talentlytica</text>
+  <text x="267" y="317" text-anchor="middle" font-size="8" fill="#6EE7B7" font-family="Arial">4 pilar dukungan</text>
+
+  <!-- Kewajiban (LEFT-BOTTOM) -->
+  <g filter="url(#shadow)">
+    <rect x="175" y="518" width="175" height="52" rx="10" fill="url(#grad-obligation)" stroke="#A78BFA" stroke-width="1.5"/>
+  </g>
+  <text x="263" y="539" text-anchor="middle" font-size="11" font-weight="700" fill="#FFFFFF" font-family="Arial">Kewajiban Peserta</text>
+  <text x="263" y="555" text-anchor="middle" font-size="9" fill="#DDD6FE" font-family="Arial">Komitmen yang harus dipenuhi</text>
+  <text x="263" y="567" text-anchor="middle" font-size="8" fill="#C4B5FD" font-family="Arial">3 kewajiban utama</text>
+
+  <!-- Benefit (RIGHT-BOTTOM) -->
+  <g filter="url(#shadow)" filter="url(#glow-gold)">
+    <rect x="750" y="518" width="175" height="52" rx="10" fill="url(#grad-benefit)" stroke="#FCD34D" stroke-width="1.5"/>
+  </g>
+  <text x="838" y="539" text-anchor="middle" font-size="11" font-weight="700" fill="#FFFFFF" font-family="Arial">Benefit</text>
+  <text x="838" y="555" text-anchor="middle" font-size="9" fill="#FDE68A" font-family="Arial">Reward atas pencapaian</text>
+  <text x="838" y="567" text-anchor="middle" font-size="8" fill="#FCD34D" font-family="Arial">Progresif sesuai gain</text>
+
+  <!-- Komunitas (RIGHT-TOP) -->
+  <g filter="url(#shadow)">
+    <rect x="745" y="268" width="175" height="52" rx="10" fill="url(#grad-community)" stroke="#F472B6" stroke-width="1.5"/>
+  </g>
+  <text x="833" y="289" text-anchor="middle" font-size="11" font-weight="700" fill="#FFFFFF" font-family="Arial">Komunitas AiXel</text>
+  <text x="833" y="305" text-anchor="middle" font-size="9" fill="#FBCFE8" font-family="Arial">Ekosistem pembelajaran</text>
+  <text x="833" y="317" text-anchor="middle" font-size="8" fill="#F9A8D4" font-family="Arial">Knowledge base & aktivitas</text>
+
+  <!-- Timeline (BOTTOM) -->
+  <g filter="url(#shadow)">
+    <rect x="460" y="590" width="180" height="52" rx="10" fill="url(#grad-timeline)" stroke="#22D3EE" stroke-width="1.5"/>
+  </g>
+  <text x="550" y="611" text-anchor="middle" font-size="11" font-weight="700" fill="#FFFFFF" font-family="Arial">Timeline Program</text>
+  <text x="550" y="627" text-anchor="middle" font-size="9" fill="#BAE6FD" font-family="Arial">Fase & milestone perjalanan</text>
+  <text x="550" y="639" text-anchor="middle" font-size="8" fill="#93C5FD" font-family="Arial">5 fase utama</text>
+
+
+  <!-- ==================== LEVEL 2 NODES — KRITERIA ==================== -->
+  <!-- Proaktif & Mandiri -->
+  <rect x="258" y="96" width="155" height="40" rx="8" fill="#1E3A8A" stroke="#60A5FA" stroke-width="1"/>
+  <text x="336" y="112" text-anchor="middle" font-size="10" font-weight="700" fill="#93C5FD" font-family="Arial">Proaktif &amp; Mandiri</text>
+  <text x="336" y="126" text-anchor="middle" font-size="8" fill="#BAE6FD" font-family="Arial">Inisiatif sendiri adopsi AI</text>
+
+  <!-- Bereksperimen Aktif -->
+  <rect x="473" y="76" width="155" height="40" rx="8" fill="#1E3A8A" stroke="#60A5FA" stroke-width="1"/>
+  <text x="551" y="92" text-anchor="middle" font-size="10" font-weight="700" fill="#93C5FD" font-family="Arial">Bereksperimen Aktif</text>
+  <text x="551" y="106" text-anchor="middle" font-size="8" fill="#BAE6FD" font-family="Arial">Coba teknik AI baru</text>
+
+  <!-- Berbagi & Kolaboratif -->
+  <rect x="688" y="96" width="155" height="40" rx="8" fill="#1E3A8A" stroke="#60A5FA" stroke-width="1"/>
+  <text x="766" y="112" text-anchor="middle" font-size="10" font-weight="700" fill="#93C5FD" font-family="Arial">Berbagi &amp; Kolaboratif</text>
+  <text x="766" y="126" text-anchor="middle" font-size="8" fill="#BAE6FD" font-family="Arial">Share temuan ke komunitas</text>
+
+
+  <!-- ==================== LEVEL 2 NODES — DUKUNGAN ==================== -->
+  <!-- Premium AI Tools -->
+  <rect x="95" y="196" width="155" height="40" rx="8" fill="#064E3B" stroke="#34D399" stroke-width="1"/>
+  <text x="173" y="212" text-anchor="middle" font-size="10" font-weight="700" fill="#6EE7B7" font-family="Arial">Premium AI Tools</text>
+  <text x="173" y="226" text-anchor="middle" font-size="8" fill="#A7F3D0" font-family="Arial">ChatGPT, Claude, Gemini...</text>
+
+  <!-- Slack Time -->
+  <rect x="58" y="318" width="155" height="40" rx="8" fill="#064E3B" stroke="#34D399" stroke-width="1"/>
+  <text x="136" y="334" text-anchor="middle" font-size="10" font-weight="700" fill="#6EE7B7" font-family="Arial">Alokasi Waktu</text>
+  <text x="136" y="348" text-anchor="middle" font-size="8" fill="#A7F3D0" font-family="Arial">10–30% slack time</text>
+
+  <!-- Founder Support -->
+  <rect x="82" y="405" width="155" height="40" rx="8" fill="#064E3B" stroke="#34D399" stroke-width="1"/>
+  <text x="160" y="421" text-anchor="middle" font-size="10" font-weight="700" fill="#6EE7B7" font-family="Arial">Founder Support</text>
+  <text x="160" y="435" text-anchor="middle" font-size="8" fill="#A7F3D0" font-family="Arial">Jalur eskalasi langsung</text>
+
+  <!-- Community -->
+  <rect x="118" y="460" width="155" height="40" rx="8" fill="#064E3B" stroke="#34D399" stroke-width="1"/>
+  <text x="196" y="476" text-anchor="middle" font-size="10" font-weight="700" fill="#6EE7B7" font-family="Arial">Like-Minded Community</text>
+  <text x="196" y="490" text-anchor="middle" font-size="8" fill="#A7F3D0" font-family="Arial">Peer learning &amp; diskusi</text>
+
+
+  <!-- ==================== LEVEL 2 NODES — KEWAJIBAN ==================== -->
+  <!-- Share Periodik -->
+  <rect x="102" y="598" width="155" height="40" rx="8" fill="#4C1D95" stroke="#A78BFA" stroke-width="1"/>
+  <text x="180" y="614" text-anchor="middle" font-size="10" font-weight="700" fill="#C4B5FD" font-family="Arial">Berbagi Periodik</text>
+  <text x="180" y="628" text-anchor="middle" font-size="8" fill="#DDD6FE" font-family="Arial">Min. 2x kontribusi/bulan</text>
+
+  <!-- Tracking Metrics -->
+  <rect x="188" y="648" width="155" height="40" rx="8" fill="#4C1D95" stroke="#A78BFA" stroke-width="1"/>
+  <text x="266" y="664" text-anchor="middle" font-size="10" font-weight="700" fill="#C4B5FD" font-family="Arial">Tracking Metrics</text>
+  <text x="266" y="678" text-anchor="middle" font-size="8" fill="#DDD6FE" font-family="Arial">Before &amp; after self-assess</text>
+
+  <!-- Koordinasi Atasan -->
+  <rect x="302" y="648" width="155" height="40" rx="8" fill="#4C1D95" stroke="#A78BFA" stroke-width="1"/>
+  <text x="380" y="664" text-anchor="middle" font-size="10" font-weight="700" fill="#C4B5FD" font-family="Arial">Koordinasi Atasan</text>
+  <text x="380" y="678" text-anchor="middle" font-size="8" fill="#DDD6FE" font-family="Arial">Validasi gain bulanan</text>
+
+
+  <!-- ==================== LEVEL 2 NODES — BENEFIT ==================== -->
+  <!-- 4-Day Work Week -->
+  <rect x="847" y="598" width="155" height="40" rx="8" fill="#78350F" stroke="#FCD34D" stroke-width="1.5"/>
+  <text x="925" y="614" text-anchor="middle" font-size="10" font-weight="700" fill="#FDE68A" font-family="Arial">4-Day Work Week</text>
+  <text x="925" y="628" text-anchor="middle" font-size="8" fill="#FCD34D" font-family="Arial">Gain ≥ 50% → no pay cut</text>
+
+  <!-- Tunjangan Produktivitas -->
+  <rect x="762" y="648" width="155" height="40" rx="8" fill="#78350F" stroke="#FCD34D" stroke-width="1.5"/>
+  <text x="840" y="664" text-anchor="middle" font-size="10" font-weight="700" fill="#FDE68A" font-family="Arial">Tunjangan Produktivitas</text>
+  <text x="840" y="678" text-anchor="middle" font-size="8" fill="#FCD34D" font-family="Arial">Tier 1–4 progresif</text>
+
+
+  <!-- ==================== LEVEL 2 NODES — KOMUNITAS ==================== -->
+  <!-- Weekly AI Win -->
+  <rect x="856" y="196" width="155" height="40" rx="8" fill="#831843" stroke="#F472B6" stroke-width="1"/>
+  <text x="934" y="212" text-anchor="middle" font-size="10" font-weight="700" fill="#FBCFE8" font-family="Arial">Weekly AI Win</text>
+  <text x="934" y="226" text-anchor="middle" font-size="8" fill="#F9A8D4" font-family="Arial">Share mingguan (Senin)</text>
+
+  <!-- Monthly Call -->
+  <rect x="888" y="318" width="155" height="40" rx="8" fill="#831843" stroke="#F472B6" stroke-width="1"/>
+  <text x="966" y="334" text-anchor="middle" font-size="10" font-weight="700" fill="#FBCFE8" font-family="Arial">Monthly Call</text>
+  <text x="966" y="348" text-anchor="middle" font-size="8" fill="#F9A8D4" font-family="Arial">Deep dive + demo 60–90 min</text>
+
+  <!-- Knowledge Base -->
+  <rect x="866" y="402" width="155" height="40" rx="8" fill="#831843" stroke="#F472B6" stroke-width="1"/>
+  <text x="944" y="418" text-anchor="middle" font-size="10" font-weight="700" fill="#FBCFE8" font-family="Arial">Knowledge Base</text>
+  <text x="944" y="432" text-anchor="middle" font-size="8" fill="#F9A8D4" font-family="Arial">Prompt lib + case studies</text>
+
+
+  <!-- ==================== LEVEL 2 NODES — TIMELINE ==================== -->
+  <!-- Onboarding -->
+  <rect x="290" y="700" width="115" height="45" rx="8" fill="#1E3A8A" stroke="#22D3EE" stroke-width="1"/>
+  <text x="348" y="717" text-anchor="middle" font-size="9" font-weight="700" fill="#BAE6FD" font-family="Arial">Fase 1</text>
+  <text x="348" y="730" text-anchor="middle" font-size="9" font-weight="700" fill="#FFFFFF" font-family="Arial">Onboarding</text>
+  <text x="348" y="742" text-anchor="middle" font-size="7" fill="#93C5FD" font-family="Arial">Minggu 1–2</text>
+
+  <!-- Eksplorasi -->
+  <rect x="415" y="718" width="115" height="45" rx="8" fill="#1E3A8A" stroke="#22D3EE" stroke-width="1"/>
+  <text x="473" y="735" text-anchor="middle" font-size="9" font-weight="700" fill="#BAE6FD" font-family="Arial">Fase 2</text>
+  <text x="473" y="748" text-anchor="middle" font-size="9" font-weight="700" fill="#FFFFFF" font-family="Arial">Eksplorasi</text>
+  <text x="473" y="760" text-anchor="middle" font-size="7" fill="#93C5FD" font-family="Arial">Bulan 1–3</text>
+
+  <!-- Evaluasi Q1 -->
+  <rect x="490" y="722" width="120" height="45" rx="8" fill="#0E4B5F" stroke="#22D3EE" stroke-width="1.5"/>
+  <text x="550" y="739" text-anchor="middle" font-size="9" font-weight="700" fill="#BAE6FD" font-family="Arial">Fase 3</text>
+  <text x="550" y="752" text-anchor="middle" font-size="9" font-weight="700" fill="#FFFFFF" font-family="Arial">Evaluasi Q1</text>
+  <text x="550" y="764" text-anchor="middle" font-size="7" fill="#67E8F9" font-family="Arial">Bulan 3 → Benefit</text>
+
+  <!-- Scaling -->
+  <rect x="575" y="718" width="115" height="45" rx="8" fill="#1E3A8A" stroke="#22D3EE" stroke-width="1"/>
+  <text x="633" y="735" text-anchor="middle" font-size="9" font-weight="700" fill="#BAE6FD" font-family="Arial">Fase 4</text>
+  <text x="633" y="748" text-anchor="middle" font-size="9" font-weight="700" fill="#FFFFFF" font-family="Arial">Scaling</text>
+  <text x="633" y="760" text-anchor="middle" font-size="7" fill="#93C5FD" font-family="Arial">Bulan 4–6</text>
+
+  <!-- Review Tahunan -->
+  <rect x="700" y="700" width="115" height="45" rx="8" fill="#1E3A8A" stroke="#22D3EE" stroke-width="1"/>
+  <text x="758" y="717" text-anchor="middle" font-size="9" font-weight="700" fill="#BAE6FD" font-family="Arial">Fase 5</text>
+  <text x="758" y="730" text-anchor="middle" font-size="9" font-weight="700" fill="#FFFFFF" font-family="Arial">Review Tahunan</text>
+  <text x="758" y="742" text-anchor="middle" font-size="7" fill="#93C5FD" font-family="Arial">Evaluasi komprehensif</text>
+
+  <!-- Arrow connecting timeline phases -->
+  <line x1="405" y1="722" x2="415" y2="722" stroke="#22D3EE" stroke-width="1" opacity=".4"/>
+  <line x1="530" y1="740" x2="575" y2="740" stroke="#22D3EE" stroke-width="1.5" stroke-dasharray="3,3" opacity=".6" marker-end="url(#arrow-teal)"/>
+
+  <!-- ==================== GOVERNANCE badge ==================== -->
+  <g>
+    <rect x="430" y="456" width="240" height="28" rx="6" fill="#0F172A" stroke="#334155" stroke-width="1"/>
+    <text x="550" y="474" text-anchor="middle" font-size="8.5" fill="#64748B" font-family="Arial">Governance: Founder · HR · Atasan · Community Lead · Peserta</text>
+  </g>
+
+</svg>
+</div>
+
+<!-- LEGEND -->
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:#0E7490;"></div> AiXel Core</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#1D4ED8;"></div> Kriteria Peserta</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#0F766E;"></div> Dukungan Program</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#7C3AED;"></div> Kewajiban Peserta</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#B45309;"></div> Benefit</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#BE185D;"></div> Komunitas AiXel</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#1E40AF;"></div> Timeline / Fase</div>
+</div>
+
+<div style="text-align:center; padding: 10px 0 30px; color: #475569; font-size:.8rem;">
+  AiXel Program — Talentlytica 2025 · Internal & Confidential
+</div>
+
+</body>
+</html>
