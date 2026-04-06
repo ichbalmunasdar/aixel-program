@@ -1439,11 +1439,26 @@
       return {label:'Below Baseline',cls:'tier-below',stars:'▼'};
     }
 
+    function getAssessmentAvgGain(a){
+      if(!a.metrics) return null;
+      var gains=METRICS_DEF.map(function(m){
+        var b=a.metrics[m.key+'_b']!=null?parseFloat(a.metrics[m.key+'_b']):null;
+        var c=a.metrics[m.key+'_c']!=null?parseFloat(a.metrics[m.key+'_c']):null;
+        return calcMetricGain(b,c,m.dir);
+      });
+      return avgGain(gains);
+    }
     function latestScore(pid){
       var all=load('a').filter(function(a){return a.pid===pid;});
       if(!all.length) return null;
       all.sort(function(a,b){return b.period.localeCompare(a.period);});
-      return all[0].score;
+      var latest=all[0];
+      // New format: avg gain * 100 as "score"
+      if(latest.metrics){
+        var g=getAssessmentAvgGain(latest);
+        return g!==null?g*100:null;
+      }
+      return latest.score!=null?latest.score:null;
     }
 
     // ── Tab switch ──
@@ -1537,6 +1552,24 @@
     };
 
     // ── Monthly Assessment ──
+    var METRICS_DEF=[
+      {key:'m1',label:'Waktu penyelesaian task',unit:'jam/task',hint:'Rata-rata jam per task bulan ini',dir:-1},
+      {key:'m2',label:'Jumlah deliverable per minggu',unit:'unit',hint:'Rata-rata deliverable per minggu',dir:1},
+      {key:'m3',label:'Jumlah revisi sebelum approval',unit:'unit',hint:'Rata-rata revisi sebelum di-approve',dir:-1},
+      {key:'m4',label:'Ide / solusi baru per bulan',unit:'unit',hint:'Total ide atau solusi baru yang dihasilkan',dir:1},
+      {key:'m5',label:'Rating kepuasan atasan',unit:'1–10',hint:'Rating yang diberikan atasan langsung (1–10)',dir:1}
+    ];
+    function calcMetricGain(baseline,current,dir){
+      if(!baseline||baseline===0||current===null||current===undefined||current==='') return null;
+      var raw=(current-baseline)/baseline;
+      return dir===-1?-raw:raw;
+    }
+    function avgGain(gains){
+      var valid=gains.filter(function(g){return g!==null;});
+      if(!valid.length) return null;
+      return valid.reduce(function(s,g){return s+g;},0)/valid.length;
+    }
+
     function renderMonthly(){
       var participants=load('p'), assessments=load('a');
       if(!participants.length){
@@ -1545,51 +1578,209 @@
       }
       var opts=participants.map(function(p){return '<option value="'+p.id+'">'+p.nama+'</option>';}).join('');
       var now=new Date(), defPeriod=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');
+
+      // ── Metric input rows ──
+      var metricRows=METRICS_DEF.map(function(m,i){
+        return '<tr>'+
+          '<td style="font-weight:600;color:var(--navy)">'+m.label+'</td>'+
+          '<td style="color:var(--soft);font-size:.8rem">'+m.unit+'</td>'+
+          '<td><input id="mta_'+m.key+'_b" type="number" step="any" placeholder="Baseline" style="width:90px;padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-size:.85rem"></td>'+
+          '<td><input id="mta_'+m.key+'_c" type="number" step="any" placeholder="Bulan ini" style="width:90px;padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-size:.85rem" oninput="mtPreviewGain()"></td>'+
+          '<td id="mta_'+m.key+'_gain" style="font-weight:700;font-size:.9rem;text-align:center">—</td>'+
+        '</tr>';
+      }).join('');
+
+      // ── History rows ──
       var sorted=[].concat(assessments).sort(function(a,b){return b.period.localeCompare(a.period);});
-      var rows='';
+      var histHTML='';
       if(!sorted.length){
-        rows='<tr><td colspan="8"><div class="mt-empty"><div class="mt-empty-icon">📋</div><p>Belum ada data asesmen.</p></div></td></tr>';
+        histHTML='<div class="mt-empty" style="padding:20px"><div class="mt-empty-icon">📋</div><p>Belum ada data asesmen.</p></div>';
       } else {
-        sorted.forEach(function(a){
+        var hrows=sorted.map(function(a){
           var p=participants.find(function(x){return x.id===a.pid;});
-          if(!p) return;
-          var gain=p.baseline?(a.score-p.baseline)/p.baseline*100:null;
-          var tier=calcTier(gain);
-          var gc=gain!==null?(gain>=0?'var(--teal)':'#EF4444'):'var(--soft)';
-          rows+='<tr>'+
+          if(!p) return '';
+          var gains=METRICS_DEF.map(function(m){
+            var b=a.metrics&&a.metrics[m.key+'_b']!=null?parseFloat(a.metrics[m.key+'_b']):null;
+            var c=a.metrics&&a.metrics[m.key+'_c']!=null?parseFloat(a.metrics[m.key+'_c']):null;
+            return calcMetricGain(b,c,m.dir);
+          });
+          var avg=avgGain(gains);
+          var tier=calcTier(avg!==null?avg*100:null);
+          var gc=avg!==null?(avg>=0?'var(--teal)':'#EF4444'):'var(--soft)';
+          var metricCols=METRICS_DEF.map(function(m){
+            var b=a.metrics&&a.metrics[m.key+'_b']!=null?a.metrics[m.key+'_b']:'—';
+            var c=a.metrics&&a.metrics[m.key+'_c']!=null?a.metrics[m.key+'_c']:'—';
+            var g=calcMetricGain(parseFloat(b),parseFloat(c),m.dir);
+            var gc2=g!==null?(g>=0?'#10B981':'#EF4444'):'var(--soft)';
+            return '<td style="font-size:.78rem;text-align:center">'+
+              (b!=='—'?b:'—')+' → '+(c!=='—'?c:'—')+
+              '<br><span style="color:'+gc2+';font-weight:700">'+(g!==null?(g>=0?'+':'')+( g*100).toFixed(0)+'%':'')+'</span>'+
+            '</td>';
+          }).join('');
+          return '<tr>'+
             '<td>'+a.period+'</td>'+
             '<td><strong>'+p.nama+'</strong></td>'+
-            '<td>'+p.baseline+'</td>'+
-            '<td>'+a.score+'</td>'+
-            '<td style="color:'+gc+';font-weight:700">'+(gain!==null?(gain>=0?'+':'')+gain.toFixed(1)+'%':'—')+'</td>'+
+            metricCols+
+            '<td style="color:'+gc+';font-weight:700;text-align:center">'+(avg!==null?(avg>=0?'+':'')+(avg*100).toFixed(1)+'%':'—')+'</td>'+
             '<td><span class="tier-badge '+tier.cls+'">'+tier.stars+' '+tier.label+'</span></td>'+
-            '<td style="font-size:.8rem;color:var(--soft)">'+(a.notes||'—')+'</td>'+
+            '<td style="font-size:.78rem;color:var(--soft);max-width:160px">'+(a.highlight||'—')+'</td>'+
             '<td><button class="mt-btn mt-btn-danger" onclick="mtDelA(\''+a.id+'\')">🗑</button></td>'+
           '</tr>';
-        });
+        }).join('');
+        var thMetrics=METRICS_DEF.map(function(m){return '<th style="font-size:.75rem;white-space:nowrap">'+m.label.split(' ').slice(0,3).join(' ')+'</th>';}).join('');
+        histHTML='<div class="mt-table-wrap"><table class="mt-table" style="font-size:.82rem">'+
+          '<thead><tr><th>Periode</th><th>Peserta</th>'+thMetrics+'<th>Avg Gain</th><th>Level</th><th>Highlight</th><th></th></tr></thead>'+
+          '<tbody>'+hrows+'</tbody></table></div>';
       }
+
       document.getElementById('mt-monthly').innerHTML=
-        '<div class="mt-form-box"><h4>📅 Tambah Data Asesmen Bulanan</h4>'+
-        '<div class="mt-form-grid">'+
+        '<div class="mt-form-box">'+
+        '<h4 style="margin-bottom:4px">📅 Monthly Self-Assessment</h4>'+
+        '<p style="font-size:.83rem;color:var(--soft);margin-bottom:16px">Diisi setiap akhir bulan. Submit ke HR sebelum tanggal 5 bulan berikutnya.</p>'+
+
+        // Header: Peserta + Periode
+        '<div class="mt-form-grid" style="margin-bottom:16px">'+
           '<div class="mt-form-group"><label>Peserta *</label><select id="mta_p">'+opts+'</select></div>'+
-          '<div class="mt-form-group"><label>Periode *</label><input id="mta_per" type="month" value="'+defPeriod+'"></div>'+
-          '<div class="mt-form-group"><label>Skor Produktivitas *</label><input id="mta_s" type="number" min="0" max="100" placeholder="0–100"></div>'+
-          '<div class="mt-form-group"><label>Catatan Aktivitas</label><input id="mta_n" placeholder="Highlight bulan ini"></div>'+
+          '<div class="mt-form-group"><label>Bulan / Periode *</label><input id="mta_per" type="month" value="'+defPeriod+'"></div>'+
+          '<div class="mt-form-group"><label>Disetujui Atasan</label><input id="mta_mgr" placeholder="Nama atasan yang menyetujui"></div>'+
         '</div>'+
-        '<button class="mt-btn mt-btn-primary" onclick="mtAddA()">➕ Simpan Asesmen</button></div>'+
-        '<div class="mt-table-wrap"><table class="mt-table">'+
-        '<thead><tr><th>Periode</th><th>Peserta</th><th>Baseline</th><th>Skor</th><th>Gain %</th><th>Status</th><th>Catatan</th><th></th></tr></thead>'+
-        '<tbody>'+rows+'</tbody></table></div>';
+
+        // A. Metrics Produktivitas
+        '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:16px;margin-bottom:16px">'+
+        '<h5 style="color:var(--navy);margin-bottom:4px">📊 A. Metrics Produktivitas</h5>'+
+        '<p style="font-size:.78rem;color:var(--soft);margin-bottom:12px">Isi nilai Baseline (jika pertama kali) dan nilai aktual bulan ini. Gain % dihitung otomatis.</p>'+
+        '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.85rem">'+
+        '<thead><tr style="background:#e8f4f8">'+
+          '<th style="text-align:left;padding:8px 10px;font-weight:700;color:var(--navy)">Metrics</th>'+
+          '<th style="padding:8px 6px;color:var(--soft)">Satuan</th>'+
+          '<th style="padding:8px 6px;color:var(--navy)">Baseline</th>'+
+          '<th style="padding:8px 6px;color:var(--navy)">Bulan Ini</th>'+
+          '<th style="padding:8px 6px;color:var(--navy)">Gain %</th>'+
+        '</tr></thead>'+
+        '<tbody>'+metricRows+'</tbody>'+
+        '</table></div>'+
+        '<div id="mta_avg_preview" style="margin-top:10px;padding:8px 14px;background:#fff;border-radius:8px;border:1px solid #e2e8f0;font-size:.85rem;display:none">'+
+          '<span style="color:var(--soft)">Avg Gain: </span><strong id="mta_avg_val" style="color:var(--teal)"></strong>&nbsp;&nbsp;'+
+          '<span id="mta_tier_badge"></span>'+
+        '</div></div>'+
+
+        // B. Aktivitas AI
+        '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:16px;margin-bottom:16px">'+
+        '<h5 style="color:var(--navy);margin-bottom:12px">🤖 B. Aktivitas AI Bulan Ini</h5>'+
+        '<div class="mt-form-group" style="margin-bottom:12px">'+
+          '<label>1. Tools AI yang digunakan bulan ini</label>'+
+          '<textarea id="mta_tools" rows="2" placeholder="Sebutkan nama tools dan frekuensi penggunaan..." style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:8px;font-size:.85rem;resize:vertical;font-family:inherit"></textarea>'+
+        '</div>'+
+        '<div class="mt-form-group" style="margin-bottom:12px">'+
+          '<label>2. Use case / workflow baru yang diterapkan</label>'+
+          '<textarea id="mta_usecase" rows="2" placeholder="Deskripsikan 1–3 use case konkret yang berhasil..." style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:8px;font-size:.85rem;resize:vertical;font-family:inherit"></textarea>'+
+        '</div>'+
+        '<div class="mt-form-group" style="margin-bottom:12px">'+
+          '<label>3. Eksperimen yang dicoba (termasuk yang gagal)</label>'+
+          '<textarea id="mta_exp" rows="2" placeholder="Ceritakan eksperimen, hasilnya, dan apa yang dipelajari..." style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:8px;font-size:.85rem;resize:vertical;font-family:inherit"></textarea>'+
+        '</div>'+
+        '<div class="mt-form-group">'+
+          '<label>4. Teknik prompting baru yang dikuasai</label>'+
+          '<textarea id="mta_prompt" rows="2" placeholder="Deskripsikan teknik dan manfaatnya..." style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:8px;font-size:.85rem;resize:vertical;font-family:inherit"></textarea>'+
+        '</div></div>'+
+
+        // C. Refleksi & Rencana
+        '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:16px;margin-bottom:16px">'+
+        '<h5 style="color:var(--navy);margin-bottom:12px">💡 C. Refleksi &amp; Rencana</h5>'+
+        '<div class="mt-form-grid" style="gap:12px">'+
+          '<div class="mt-form-group">'+
+            '<label>8. Highlight terbaik bulan ini</label>'+
+            '<textarea id="mta_highlight" rows="2" placeholder="Apa pencapaian AI terbesar kamu bulan ini?..." style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:8px;font-size:.85rem;resize:vertical;font-family:inherit"></textarea>'+
+          '</div>'+
+          '<div class="mt-form-group">'+
+            '<label>9. Hambatan yang dihadapi</label>'+
+            '<textarea id="mta_hambatan" rows="2" placeholder="Apa yang paling sulit? Bagaimana mengatasinya?..." style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:8px;font-size:.85rem;resize:vertical;font-family:inherit"></textarea>'+
+          '</div>'+
+          '<div class="mt-form-group">'+
+            '<label>10. Rencana eksperimen bulan depan</label>'+
+            '<textarea id="mta_rencana" rows="2" placeholder="Apa yang ingin kamu coba di bulan berikutnya?..." style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:8px;font-size:.85rem;resize:vertical;font-family:inherit"></textarea>'+
+          '</div>'+
+        '</div></div>'+
+
+        // D. Kontribusi Komunitas
+        '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:16px;margin-bottom:20px">'+
+        '<h5 style="color:var(--navy);margin-bottom:12px">🤝 D. Kontribusi Komunitas</h5>'+
+        '<div class="mt-form-grid">'+
+          '<div class="mt-form-group">'+
+            '<label>11. Jumlah kontribusi ke komunitas bulan ini</label>'+
+            '<input id="mta_kontrib" type="number" min="0" placeholder="0" style="">'+
+          '</div>'+
+          '<div class="mt-form-group">'+
+            '<label>12. Kontribusi terbaik bulan ini</label>'+
+            '<input id="mta_kontrib_best" placeholder="Deskripsikan satu kontribusi paling berdampak...">'+
+          '</div>'+
+        '</div></div>'+
+
+        '<button class="mt-btn mt-btn-primary" style="width:100%;padding:12px;font-size:1rem" onclick="mtAddA()">💾 Simpan Monthly Assessment</button>'+
+        '</div>'+
+
+        // History
+        '<div style="margin-top:8px"><h5 style="color:var(--navy);margin-bottom:12px;font-size:.95rem">📋 Riwayat Assessment</h5>'+
+        histHTML+'</div>';
     }
+
+    window.mtPreviewGain=function(){
+      var gains=METRICS_DEF.map(function(m){
+        var b=parseFloat(document.getElementById('mta_'+m.key+'_b').value);
+        var c=parseFloat(document.getElementById('mta_'+m.key+'_c').value);
+        var g=calcMetricGain(b,c,m.dir);
+        var el=document.getElementById('mta_'+m.key+'_gain');
+        if(el){
+          if(g!==null){
+            var pct=(g*100).toFixed(1);
+            el.style.color=g>=0?'#10B981':'#EF4444';
+            el.textContent=(g>=0?'+':'')+pct+'%';
+          } else { el.textContent='—'; el.style.color='var(--soft)'; }
+        }
+        return g;
+      });
+      var avg=avgGain(gains);
+      var preview=document.getElementById('mta_avg_preview');
+      if(avg!==null&&preview){
+        preview.style.display='block';
+        var pct=(avg*100).toFixed(1);
+        document.getElementById('mta_avg_val').textContent=(avg>=0?'+':'')+pct+'%';
+        var tier=calcTier(avg*100);
+        document.getElementById('mta_tier_badge').innerHTML='<span class="tier-badge '+tier.cls+'">'+tier.stars+' '+tier.label+'</span>';
+      }
+    };
 
     window.mtAddA=function(){
       var pid=document.getElementById('mta_p').value;
       var period=document.getElementById('mta_per').value;
-      var score=parseFloat(document.getElementById('mta_s').value);
-      if(!pid||!period||isNaN(score)) return;
+      if(!pid||!period){ alert('Peserta dan periode wajib diisi.'); return; }
+      var metrics={};
+      var hasMetric=false;
+      METRICS_DEF.forEach(function(m){
+        var bEl=document.getElementById('mta_'+m.key+'_b');
+        var cEl=document.getElementById('mta_'+m.key+'_c');
+        if(bEl&&bEl.value!==''){metrics[m.key+'_b']=parseFloat(bEl.value);hasMetric=true;}
+        if(cEl&&cEl.value!==''){metrics[m.key+'_c']=parseFloat(cEl.value);hasMetric=true;}
+      });
+      if(!hasMetric){ alert('Isi minimal satu metrics produktivitas.'); return; }
+      var rec={
+        id:uid(), pid:pid, period:period,
+        mgr:document.getElementById('mta_mgr').value.trim(),
+        metrics:metrics,
+        tools:document.getElementById('mta_tools').value.trim(),
+        usecase:document.getElementById('mta_usecase').value.trim(),
+        exp:document.getElementById('mta_exp').value.trim(),
+        prompt:document.getElementById('mta_prompt').value.trim(),
+        highlight:document.getElementById('mta_highlight').value.trim(),
+        hambatan:document.getElementById('mta_hambatan').value.trim(),
+        rencana:document.getElementById('mta_rencana').value.trim(),
+        kontrib:document.getElementById('mta_kontrib').value,
+        kontrib_best:document.getElementById('mta_kontrib_best').value.trim()
+      };
       var as=load('a');
-      as.push({id:uid(),pid:pid,period:period,score:score,notes:document.getElementById('mta_n').value.trim()});
-      save('a',as); renderMonthly();
+      as.push(rec);
+      save('a',as);
+      renderMonthly();
     };
     window.mtDelA=function(id){
       save('a',load('a').filter(function(a){return a.id!==id;}));
@@ -1606,45 +1797,83 @@
       var opts=participants.map(function(p){return '<option value="'+p.id+'">'+p.nama+'</option>';}).join('');
       var actTypes=['Knowledge Sharing','Demo / Presentasi','Tutorial / Artikel','Slack Post','Mentoring','Workshop','Lainnya'];
       var actOpts=actTypes.map(function(t){return '<option>'+t+'</option>';}).join('');
-      var actIcons={'Knowledge Sharing':'📚','Demo / Presentasi':'🎤','Tutorial / Artikel':'✍️','Slack Post':'💬','Mentoring':'👥','Workshop':'🛠️','Lainnya':'📌'};
+      var actTypes=['Demo/Rekaman','Written Post','Workshop Mini','Prompt Library','Community Call','Mentoring','Lainnya'];
+      var actOpts2=actTypes.map(function(t){return '<option>'+t+'</option>';}).join('');
+      var actIcons={'Demo/Rekaman':'🎤','Written Post':'✍️','Workshop Mini':'🛠️','Prompt Library':'📚','Community Call':'📞','Mentoring':'👥','Lainnya':'📌'};
       var sorted=[].concat(logs).sort(function(a,b){return b.date.localeCompare(a.date);});
-      var listHTML='';
+      var tableRows='';
       if(!sorted.length){
-        listHTML='<div class="mt-empty"><div class="mt-empty-icon">📝</div><p>Belum ada aktivitas komunitas dicatat.</p></div>';
+        tableRows='<tr><td colspan="9"><div class="mt-empty" style="padding:20px"><div class="mt-empty-icon">📝</div><p>Belum ada kontribusi dicatat. Minimum 2 entri per bulan.</p></div></td></tr>';
       } else {
-        listHTML='<ul class="activity-log">'+sorted.map(function(l){
+        tableRows=sorted.map(function(l){
           var p=participants.find(function(x){return x.id===l.pid;});
-          var icon=actIcons[l.actType]||'📌';
-          return '<li>'+
-            '<div class="act-dot">'+icon+'</div>'+
-            '<div class="act-info" style="flex:1">'+
-              '<div class="act-title">'+l.actType+' — <strong>'+(p?p.nama:'?')+'</strong></div>'+
-              '<div class="act-meta">'+l.date+' · '+(l.desc||'—')+'</div>'+
-            '</div>'+
-            '<button class="mt-btn mt-btn-danger" onclick="mtDelC(\''+l.id+'\')">🗑</button>'+
-          '</li>';
-        }).join('')+'</ul>';
+          var icon=actIcons[l.tipe]||'📌';
+          var validasi=l.validasi||'';
+          var validBadge=validasi==='Ya'?'<span style="background:#d1fae5;color:#065f46;padding:2px 8px;border-radius:10px;font-size:.75rem;font-weight:700">✓ Ya</span>':
+                          validasi==='Tidak'?'<span style="background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:10px;font-size:.75rem">Tidak</span>':
+                          '<span style="color:var(--soft);font-size:.75rem">Menunggu</span>';
+          return '<tr>'+
+            '<td style="font-size:.82rem">'+l.date+'</td>'+
+            '<td style="font-size:.78rem;color:var(--soft)">'+l.bulan+'</td>'+
+            '<td>'+icon+' <span style="font-size:.82rem">'+l.tipe+'</span></td>'+
+            '<td style="font-size:.82rem"><strong>'+(l.judul||'—')+'</strong></td>'+
+            '<td style="font-size:.78rem;max-width:200px">'+(p?p.nama:'?')+'</td>'+
+            '<td style="font-size:.78rem;color:var(--soft);max-width:180px">'+(l.deskripsi||'—')+(l.link?'<br><a href="'+l.link+'" target="_blank" style="color:var(--teal)">🔗 Link</a>':'')+'</td>'+
+            '<td style="font-size:.78rem">'+(l.audiens||'—')+'</td>'+
+            '<td>'+validBadge+'</td>'+
+            '<td style="font-size:.78rem;color:var(--soft)">'+(l.catatanHR||'—')+'</td>'+
+            '<td><button class="mt-btn mt-btn-danger" onclick="mtDelC(\''+l.id+'\')">🗑</button></td>'+
+          '</tr>';
+        }).join('');
       }
       var today=new Date().toISOString().slice(0,10);
+      var bulanNow=today.slice(0,7);
       document.getElementById('mt-community').innerHTML=
-        '<div class="mt-form-box"><h4>🤝 Catat Aktivitas Komunitas</h4>'+
-        '<div class="mt-form-grid">'+
+        '<div class="mt-form-box">'+
+        '<h4 style="margin-bottom:4px">🤝 Community Contribution Log</h4>'+
+        '<p style="font-size:.83rem;color:var(--soft);margin-bottom:16px">Catat setiap kontribusi ke komunitas AiXel. Minimum <strong>2 entri per bulan.</strong></p>'+
+        '<div class="mt-form-grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:12px">'+
           '<div class="mt-form-group"><label>Peserta *</label><select id="mtc_p">'+opts+'</select></div>'+
-          '<div class="mt-form-group"><label>Tipe Aktivitas *</label><select id="mtc_t">'+actOpts+'</select></div>'+
           '<div class="mt-form-group"><label>Tanggal *</label><input id="mtc_d" type="date" value="'+today+'"></div>'+
-          '<div class="mt-form-group"><label>Deskripsi</label><input id="mtc_desc" placeholder="Topik / judul sharing"></div>'+
+          '<div class="mt-form-group"><label>Bulan *</label><input id="mtc_bulan" type="month" value="'+bulanNow+'"></div>'+
+          '<div class="mt-form-group"><label>Tipe Kontribusi *</label><select id="mtc_t">'+actOpts2+'</select></div>'+
         '</div>'+
-        '<button class="mt-btn mt-btn-primary" onclick="mtAddC()">➕ Catat Aktivitas</button></div>'+
-        '<div>'+listHTML+'</div>';
+        '<div class="mt-form-grid" style="grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">'+
+          '<div class="mt-form-group"><label>Judul / Topik *</label><input id="mtc_judul" placeholder="Judul presentasi, artikel, workshop..."></div>'+
+          '<div class="mt-form-group"><label>Audiens / Peserta</label><input id="mtc_audiens" placeholder="Siapa yang hadir/membaca?"></div>'+
+        '</div>'+
+        '<div class="mt-form-group" style="margin-bottom:12px"><label>Deskripsi</label>'+
+          '<textarea id="mtc_desc" rows="2" placeholder="Jelaskan kontribusi dan dampaknya..." style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:8px;font-size:.85rem;resize:vertical;font-family:inherit"></textarea>'+
+        '</div>'+
+        '<div class="mt-form-grid" style="grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px">'+
+          '<div class="mt-form-group"><label>Link (opsional)</label><input id="mtc_link" placeholder="https://..."></div>'+
+          '<div class="mt-form-group"><label>Validasi Atasan</label><select id="mtc_validasi"><option value="">Menunggu</option><option value="Ya">Ya</option><option value="Tidak">Tidak</option></select></div>'+
+          '<div class="mt-form-group"><label>Catatan HR</label><input id="mtc_hr" placeholder="Opsional"></div>'+
+        '</div>'+
+        '<button class="mt-btn mt-btn-primary" onclick="mtAddC()">➕ Simpan Kontribusi</button>'+
+        '</div>'+
+        '<div class="mt-table-wrap"><table class="mt-table" style="font-size:.82rem">'+
+        '<thead><tr><th>Tanggal</th><th>Bulan</th><th>Tipe</th><th>Judul/Topik</th><th>Peserta</th><th>Deskripsi & Link</th><th>Audiens</th><th>Validasi Atasan</th><th>Catatan HR</th><th></th></tr></thead>'+
+        '<tbody>'+tableRows+'</tbody></table></div>';
     }
 
     window.mtAddC=function(){
       var pid=document.getElementById('mtc_p').value;
       var date=document.getElementById('mtc_d').value;
-      var actType=document.getElementById('mtc_t').value;
-      if(!pid||!date||!actType) return;
+      var tipe=document.getElementById('mtc_t').value;
+      var judul=document.getElementById('mtc_judul').value.trim();
+      if(!pid||!date||!tipe||!judul){ alert('Peserta, tanggal, tipe, dan judul wajib diisi.'); return; }
       var cs=load('c');
-      cs.push({id:uid(),pid:pid,date:date,actType:actType,desc:document.getElementById('mtc_desc').value.trim()});
+      cs.push({
+        id:uid(), pid:pid, date:date,
+        bulan:document.getElementById('mtc_bulan').value,
+        tipe:tipe, judul:judul,
+        deskripsi:document.getElementById('mtc_desc').value.trim(),
+        link:document.getElementById('mtc_link').value.trim(),
+        audiens:document.getElementById('mtc_audiens').value.trim(),
+        validasi:document.getElementById('mtc_validasi').value,
+        catatanHR:document.getElementById('mtc_hr').value.trim()
+      });
       save('c',cs); renderCommunity();
     };
     window.mtDelC=function(id){
@@ -1654,69 +1883,225 @@
 
     // ── Quarterly Review ──
     function renderQuarterly(){
-      var participants=load('p'), assessments=load('a'), logs=load('c');
+      var participants=load('p'), assessments=load('a'), logs=load('c'), reviews=load('qr');
       if(!participants.length){
         document.getElementById('mt-quarterly').innerHTML='<div class="mt-empty"><div class="mt-empty-icon">📈</div><p>Tambah peserta terlebih dahulu.</p></div>';
         return;
       }
       function getQ(period){ var parts=period.split('-'); return 'Q'+Math.ceil(parseInt(parts[1])/3)+'-'+parts[0]; }
 
+      var pOpts=participants.map(function(p){return '<option value="'+p.id+'">'+p.nama+'</option>';}).join('');
+      var qOpts=['Q1','Q2','Q3','Q4'].map(function(q){
+        var y=new Date().getFullYear(); return '<option>'+q+'-'+y+'</option>';
+      }).join('');
+
+      // Form HR Review
+      var formHTML=
+        '<div class="mt-form-box" style="margin-bottom:20px">'+
+        '<h4 style="margin-bottom:4px">📋 Quarterly Review — HR Assessment</h4>'+
+        '<p style="font-size:.83rem;color:var(--soft);margin-bottom:16px">Dilakukan setiap 3 bulan oleh HR + Atasan. Hasilnya menentukan benefit peserta.</p>'+
+        '<div class="mt-form-grid" style="margin-bottom:16px">'+
+          '<div class="mt-form-group"><label>Peserta *</label><select id="qr_p">'+pOpts+'</select></div>'+
+          '<div class="mt-form-group"><label>Kuartal / Periode *</label><input id="qr_q" placeholder="Q1-2025, Q2-2025..."></div>'+
+          '<div class="mt-form-group"><label>HR yang mereview *</label><input id="qr_hr" placeholder="Nama HR"></div>'+
+          '<div class="mt-form-group"><label>Atasan yang memvalidasi *</label><input id="qr_mgr" placeholder="Nama atasan"></div>'+
+          '<div class="mt-form-group"><label>Tanggal Review</label><input id="qr_date" type="date" value="'+new Date().toISOString().slice(0,10)+'"></div>'+
+        '</div>'+
+        '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:16px;margin-bottom:16px">'+
+        '<h5 style="color:var(--navy);margin-bottom:12px">⚖️ Scoring Rubric — HR Assessment</h5>'+
+        '<p style="font-size:.78rem;color:var(--soft);margin-bottom:10px">Skor 1–5: 1=Sangat Kurang, 2=Kurang, 3=Cukup, 4=Baik, 5=Sangat Baik</p>'+
+        '<table style="width:100%;border-collapse:collapse;font-size:.85rem">'+
+        '<thead><tr style="background:#e8f4f8">'+
+          '<th style="text-align:left;padding:8px 10px;color:var(--navy)">Dimensi Penilaian</th>'+
+          '<th style="padding:8px;color:var(--soft);width:60px">Bobot</th>'+
+          '<th style="padding:8px;color:var(--navy);width:80px">Skor (1–5)</th>'+
+          '<th style="padding:8px;color:var(--navy)">Komentar HR</th>'+
+        '</tr></thead><tbody>'+
+        [
+          ['Productivity gain terukur (Before vs After)','40%','qr_s1'],
+          ['Konsistensi kontribusi komunitas','25%','qr_s2'],
+          ['Kualitas eksperimen dan learning','15%','qr_s3'],
+          ['Kolaborasi dan impact ke tim','10%','qr_s4'],
+          ['Validasi atasan langsung','10%','qr_s5'],
+        ].map(function(r,i){
+          return '<tr style="border-top:1px solid #e2e8f0">'+
+            '<td style="padding:8px 10px;font-weight:500">'+(i+1)+'. '+r[0]+'</td>'+
+            '<td style="padding:8px;text-align:center;color:var(--soft)">'+r[1]+'</td>'+
+            '<td style="padding:8px"><input id="'+r[2]+'" type="number" min="1" max="5" placeholder="1–5" style="width:60px;padding:4px 6px;border:1px solid #ddd;border-radius:6px;font-size:.85rem" oninput="qrPreview()"></td>'+
+            '<td style="padding:8px"><input id="'+r[2]+'_note" placeholder="Komentar..." style="width:100%;padding:4px 8px;border:1px solid #ddd;border-radius:6px;font-size:.82rem"></td>'+
+          '</tr>';
+        }).join('')+
+        '<tr style="border-top:2px solid var(--navy);background:#f0f8ff">'+
+          '<td colspan="2" style="padding:10px;font-weight:700;color:var(--navy)">TOTAL SKOR TERBOBOT:</td>'+
+          '<td colspan="2" style="padding:10px"><strong id="qr_total" style="font-size:1.1rem;color:var(--teal)">—</strong></td>'+
+        '</tr></tbody></table></div>'+
+        '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:16px;margin-bottom:16px">'+
+        '<h5 style="color:var(--navy);margin-bottom:12px">🏆 Keputusan Benefit</h5>'+
+        '<div class="mt-form-grid">'+
+          '<div class="mt-form-group"><label>Status Benefit Peserta</label>'+
+            '<select id="qr_benefit"><option value="">Pilih...</option><option>Eligible</option><option>Tidak Eligible</option><option>Dalam Evaluasi</option></select>'+
+          '</div>'+
+          '<div class="mt-form-group"><label>Tier Tunjangan Disetujui</label>'+
+            '<select id="qr_tier"><option value="">Pilih...</option><option>Tier 1 — Gain 20–34%</option><option>Tier 2 — Gain 35–49%</option><option>Tier 3 — Gain 50–74%</option><option>Tier 4 — Gain 75%+</option></select>'+
+          '</div>'+
+          '<div class="mt-form-group"><label>4-Day Work Week</label>'+
+            '<select id="qr_4day"><option value="">Pilih...</option><option>Ya</option><option>Tidak</option></select>'+
+          '</div>'+
+          '<div class="mt-form-group"><label>Catatan Khusus HR</label>'+
+            '<input id="qr_notes" placeholder="Catatan tambahan...">'+
+          '</div>'+
+        '</div></div>'+
+        '<button class="mt-btn mt-btn-primary" style="width:100%;padding:12px" onclick="mtAddQR()">💾 Simpan Quarterly Review</button>'+
+        '</div>';
+
+      // Summary cards per peserta
       var cards='';
       participants.forEach(function(p){
         var pas=assessments.filter(function(a){return a.pid===p.id;});
-        if(!pas.length) return;
-        var qMap={};
-        pas.forEach(function(a){ var q=getQ(a.period); if(!qMap[q]) qMap[q]=[]; qMap[q].push(a.score); });
-        var quarters=Object.keys(qMap).sort(function(a,b){return b.localeCompare(a);});
         var pLogs=logs.filter(function(l){return l.pid===p.id;}).length;
+        var pReviews=reviews.filter(function(r){return r.pid===p.id;});
+
+        // Metrics progress per bulan
+        var sorted=[].concat(pas).sort(function(a,b){return a.period.localeCompare(b.period);});
+        var metricTableRows=METRICS_DEF.map(function(m){
+          var cells=sorted.map(function(a){
+            var c=a.metrics&&a.metrics[m.key+'_c']!=null?a.metrics[m.key+'_c']:null;
+            var b=a.metrics&&a.metrics[m.key+'_b']!=null?a.metrics[m.key+'_b']:null;
+            var g=calcMetricGain(b,c,m.dir);
+            var color=g!==null?(g>=0?'#10B981':'#EF4444'):'var(--soft)';
+            return '<td style="text-align:center;font-size:.78rem">'+(c!==null?c:'—')+'<br>'+
+              (g!==null?'<span style="color:'+color+';font-weight:700">'+(g>=0?'+':'')+(g*100).toFixed(0)+'%</span>':'')+'</td>';
+          }).join('');
+          return '<tr><td style="font-size:.78rem;font-weight:600;color:var(--navy);white-space:nowrap">'+m.label+'</td><td style="font-size:.75rem;color:var(--soft)">'+m.unit+'</td>'+cells+'</tr>';
+        }).join('');
+        var monthHeaders=sorted.map(function(a){return '<th style="font-size:.75rem;white-space:nowrap">'+a.period+'</th>';}).join('');
+
+        // Latest gain
+        var latestGainPct=latestScore(p.id);
+        var tier=calcTier(latestGainPct);
+
+        // Latest review
+        var lastRev=pReviews.sort(function(a,b){return b.date.localeCompare(a.date);})[0];
+
         cards+='<div class="quarterly-card">'+
-          '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">'+
-            '<div><div style="font-weight:700;font-size:1rem;">👤 '+p.nama+'</div>'+
-            '<div style="font-size:.8rem;color:var(--soft)">'+(p.dept||'')+(p.dept?' · ':'')+'Baseline: '+p.baseline+'</div></div>'+
-            '<div style="text-align:right"><div style="font-size:.75rem;color:var(--soft)">Aktivitas Komunitas</div>'+
-            '<div style="font-size:1.5rem;font-weight:800;color:var(--teal)">'+pLogs+'</div></div>'+
+          '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;flex-wrap:wrap;gap:8px">'+
+            '<div>'+
+              '<div style="font-weight:700;font-size:1rem">👤 '+p.nama+'</div>'+
+              '<div style="font-size:.8rem;color:var(--soft)">'+(p.jabatan||p.dept||'')+'</div>'+
+            '</div>'+
+            '<div style="display:flex;gap:12px">'+
+              '<div style="text-align:center"><div style="font-size:.7rem;color:var(--soft)">Kontribusi Komunitas</div><div style="font-size:1.4rem;font-weight:800;color:var(--teal)">'+pLogs+'</div></div>'+
+              '<div style="text-align:center"><div style="font-size:.7rem;color:var(--soft)">Latest Gain</div><div style="font-size:1.4rem;font-weight:800;color:'+(latestGainPct!==null&&latestGainPct>=0?'var(--teal)':'#EF4444')+'">'+(latestGainPct!==null?(latestGainPct>=0?'+':'')+latestGainPct.toFixed(1)+'%':'—')+'</div></div>'+
+              '<div style="text-align:center"><div style="font-size:.7rem;color:var(--soft)">Level</div><span class="tier-badge '+tier.cls+'" style="font-size:.75rem">'+tier.stars+' '+tier.label+'</span></div>'+
+            '</div>'+
           '</div>'+
-          '<div class="mt-table-wrap"><table class="mt-table"><thead><tr><th>Kuartal</th><th>Avg Skor</th><th>Gain vs Baseline</th><th>Status</th></tr></thead><tbody>'+
-          quarters.map(function(q){
-            var scores=qMap[q];
-            var avg=scores.reduce(function(a,b){return a+b;},0)/scores.length;
-            var gain=p.baseline?(avg-p.baseline)/p.baseline*100:null;
-            var tier=calcTier(gain);
-            var gc=gain!==null?(gain>=0?'var(--teal)':'#EF4444'):'var(--soft)';
-            return '<tr><td><strong>'+q+'</strong></td><td>'+avg.toFixed(1)+'</td>'+
-              '<td style="color:'+gc+';font-weight:700">'+(gain!==null?(gain>=0?'+':'')+gain.toFixed(1)+'%':'—')+'</td>'+
-              '<td><span class="tier-badge '+tier.cls+'">'+tier.stars+' '+tier.label+'</span></td></tr>';
-          }).join('')+
-          '</tbody></table></div></div>';
+          (sorted.length?
+            '<h6 style="color:var(--navy);margin-bottom:8px;font-size:.85rem">📊 Progres Metrics per Bulan</h6>'+
+            '<div class="mt-table-wrap"><table class="mt-table" style="font-size:.8rem">'+
+            '<thead><tr><th style="font-size:.75rem">Metrics</th><th style="font-size:.75rem">Satuan</th>'+monthHeaders+'</tr></thead>'+
+            '<tbody>'+metricTableRows+'</tbody></table></div>'
+          :'')+
+          (lastRev?
+            '<div style="margin-top:14px;padding:12px;background:#f0f8ff;border-radius:8px;font-size:.82rem">'+
+            '<strong style="color:var(--navy)">📋 HR Review Terakhir ('+lastRev.kuartal+')</strong><br>'+
+            'Skor Terbobot: <strong style="color:var(--teal)">'+lastRev.totalSkor.toFixed(2)+'</strong> | '+
+            'Benefit: <strong>'+lastRev.benefit+'</strong> | '+
+            (lastRev.tier?'Tier: <strong>'+lastRev.tier+'</strong> | ':'')+
+            '4DWW: <strong>'+lastRev.fourDay+'</strong>'+
+            '</div>'
+          :'')+
+        '</div>';
       });
-      if(!cards) cards='<div class="mt-empty"><div class="mt-empty-icon">📈</div><p>Belum ada data asesmen untuk ditampilkan.</p></div>';
-      document.getElementById('mt-quarterly').innerHTML=
-        '<p style="font-size:.9rem;color:var(--soft);margin-bottom:20px;">Ringkasan performa per kuartal berdasarkan data Monthly Assessment.</p>'+cards;
+      if(!cards) cards='<div class="mt-empty"><div class="mt-empty-icon">📈</div><p>Belum ada data assessment untuk ditampilkan.</p></div>';
+      document.getElementById('mt-quarterly').innerHTML=formHTML+
+        '<h5 style="color:var(--navy);margin-bottom:14px">👥 Ringkasan Performa Peserta</h5>'+cards;
     }
+
+    window.qrPreview=function(){
+      var weights=[0.4,0.25,0.15,0.10,0.10];
+      var ids=['qr_s1','qr_s2','qr_s3','qr_s4','qr_s5'];
+      var total=0; var valid=true;
+      ids.forEach(function(id,i){
+        var v=parseFloat(document.getElementById(id).value);
+        if(!isNaN(v)) total+=v*weights[i]; else valid=false;
+      });
+      var el=document.getElementById('qr_total');
+      if(el) el.textContent=valid?total.toFixed(2)+' / 5.00':'—';
+    };
+
+    window.mtAddQR=function(){
+      var pid=document.getElementById('qr_p').value;
+      var kuartal=document.getElementById('qr_q').value.trim();
+      var hr=document.getElementById('qr_hr').value.trim();
+      if(!pid||!kuartal||!hr){ alert('Peserta, kuartal, dan nama HR wajib diisi.'); return; }
+      var weights=[0.4,0.25,0.15,0.10,0.10];
+      var ids=['qr_s1','qr_s2','qr_s3','qr_s4','qr_s5'];
+      var scores={}; var total=0;
+      ids.forEach(function(id,i){
+        var v=parseFloat(document.getElementById(id).value);
+        scores[id]=isNaN(v)?null:v;
+        scores[id+'_note']=document.getElementById(id+'_note').value.trim();
+        if(!isNaN(v)) total+=v*weights[i];
+      });
+      var rec={
+        id:uid(), pid:pid, kuartal:kuartal, date:document.getElementById('qr_date').value,
+        hr:hr, mgr:document.getElementById('qr_mgr').value.trim(),
+        scores:scores, totalSkor:total,
+        benefit:document.getElementById('qr_benefit').value,
+        tier:document.getElementById('qr_tier').value,
+        fourDay:document.getElementById('qr_4day').value,
+        notes:document.getElementById('qr_notes').value.trim()
+      };
+      var qrs=load('qr');
+      qrs.push(rec);
+      save('qr',qrs);
+      renderQuarterly();
+    };
 
     // ── Guide ──
     function renderGuide(){
       document.getElementById('mt-guide').innerHTML=
         '<div class="mt-form-box"><h4>📖 Petunjuk Penggunaan</h4>'+
-        '<div style="font-size:.9rem;color:var(--mid);line-height:1.9">'+
-          '<p style="margin-bottom:12px"><strong>1. Dashboard</strong> — Daftarkan peserta AiXel beserta skor baseline produktivitas (skala 0–100).</p>'+
-          '<p style="margin-bottom:12px"><strong>2. Monthly Assessment</strong> — Setiap bulan masukkan skor terkini. Gain % &amp; Level dihitung otomatis.</p>'+
-          '<p style="margin-bottom:12px"><strong>3. Community Log</strong> — Catat aktivitas sharing peserta: knowledge sharing, demo, tutorial, dll.</p>'+
-          '<p style="margin-bottom:20px"><strong>4. Quarterly Review</strong> — Lihat ringkasan performa per kuartal dan tren kemajuan peserta.</p>'+
-          '<div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:10px;padding:16px;margin-bottom:12px">'+
-            '<p style="font-weight:700;color:#065F46;margin-bottom:10px">📊 Tier / Level Status</p>'+
-            '<div style="display:flex;flex-wrap:wrap;gap:8px">'+
-              '<span class="tier-badge tier-4">★★★★ Level 4 — Gain ≥ 75%</span>'+
-              '<span class="tier-badge tier-3">★★★ Level 3 — Gain ≥ 50%</span>'+
-              '<span class="tier-badge tier-2">★★ Level 2 — Gain ≥ 25%</span>'+
-              '<span class="tier-badge tier-1">★ Level 1 — Gain ≥ 0%</span>'+
-              '<span class="tier-badge tier-below">▼ Below Baseline</span>'+
-            '</div>'+
-          '</div>'+
-          '<div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:10px;padding:14px">'+
-            '<p style="font-weight:700;color:#065F46;margin-bottom:6px">📊 Penyimpanan Data</p>'+
-            '<p style="font-size:.85rem">Data disimpan di <strong>Google Sheets</strong>. Tracking progress, validasi, dan reporting dilakukan langsung di spreadsheet oleh tim HR.</p>'+
-          '</div>'+
+        '<div style="font-size:.88rem;color:var(--mid);line-height:1.8">'+
+
+        '<div style="background:#EFF6FF;border-left:4px solid var(--navy);border-radius:0 8px 8px 0;padding:12px 16px;margin-bottom:16px">'+
+          '<strong style="color:var(--navy)">Dashboard</strong> — Daftarkan peserta beserta jabatan, departemen, atasan langsung, dan tanggal bergabung.'+
+        '</div>'+
+
+        '<div style="background:#F0FDF4;border-left:4px solid #10B981;border-radius:0 8px 8px 0;padding:12px 16px;margin-bottom:16px">'+
+          '<strong style="color:#065F46">Monthly Assessment</strong> — Diisi setiap akhir bulan. Terdiri dari:<br>'+
+          '<span style="color:var(--soft);font-size:.83rem">'+
+          '• <strong>A. Aktivitas AI:</strong> Tools, use case, eksperimen, teknik prompting<br>'+
+          '• <strong>B. Metrics Produktivitas:</strong> 5 metrics dengan nilai Baseline + Bulan Ini → Gain % otomatis<br>'+
+          '• <strong>C. Refleksi:</strong> Highlight, hambatan, rencana bulan depan<br>'+
+          '• <strong>D. Kontribusi Komunitas:</strong> Jumlah & kontribusi terbaik bulan ini'+
+          '</span>'+
+        '</div>'+
+
+        '<div style="background:#FFF7ED;border-left:4px solid #F59E0B;border-radius:0 8px 8px 0;padding:12px 16px;margin-bottom:16px">'+
+          '<strong style="color:#92400E">Community Log</strong> — Catat setiap kontribusi ke komunitas AiXel. Minimum <strong>2 entri per bulan.</strong><br>'+
+          '<span style="color:var(--soft);font-size:.83rem">Tipe: Demo/Rekaman, Written Post, Workshop Mini, Prompt Library, Community Call, Mentoring, Lainnya</span>'+
+        '</div>'+
+
+        '<div style="background:#FDF4FF;border-left:4px solid #A855F7;border-radius:0 8px 8px 0;padding:12px 16px;margin-bottom:20px">'+
+          '<strong style="color:#6B21A8">Quarterly Review</strong> — Dilakukan HR + Atasan setiap 3 bulan. Scoring 5 dimensi (bobot terbobot) → menentukan Tier Benefit &amp; 4-Day Work Week.'+
+        '</div>'+
+
+        '<div style="background:#F8FAFC;border:1px solid #e2e8f0;border-radius:10px;padding:16px;margin-bottom:12px">'+
+          '<p style="font-weight:700;color:var(--navy);margin-bottom:10px">📊 Threshold Benefit Program</p>'+
+          '<table style="width:100%;border-collapse:collapse;font-size:.83rem">'+
+          '<tr style="background:#e8f4f8"><th style="padding:6px 10px;text-align:left">Level</th><th style="padding:6px 10px;text-align:left">Gain</th><th style="padding:6px 10px;text-align:left">Benefit</th></tr>'+
+          '<tr><td style="padding:6px 10px"><span class="tier-badge tier-1">★ Level 1</span></td><td style="padding:6px 10px">20–34%</td><td style="padding:6px 10px">Tunjangan Tier 1</td></tr>'+
+          '<tr><td style="padding:6px 10px"><span class="tier-badge tier-2">★★ Level 2</span></td><td style="padding:6px 10px">35–49%</td><td style="padding:6px 10px">Tunjangan Tier 2</td></tr>'+
+          '<tr><td style="padding:6px 10px"><span class="tier-badge tier-3">★★★ Level 3</span></td><td style="padding:6px 10px">50–74%</td><td style="padding:6px 10px">Tunjangan Tier 3 + Evaluasi 4-Day Work Week</td></tr>'+
+          '<tr><td style="padding:6px 10px"><span class="tier-badge tier-4">★★★★ Level 4</span></td><td style="padding:6px 10px">≥ 75%</td><td style="padding:6px 10px">Tunjangan Tier 4 + 4-Day Work Week Aktif</td></tr>'+
+          '</table>'+
+        '</div>'+
+
+        '<div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:10px;padding:12px 16px;font-size:.83rem">'+
+          '💾 <strong>Penyimpanan Data:</strong> Semua data disimpan di Firebase Realtime Database — tersinkron secara real-time, dapat diakses oleh HR dan admin kapan saja.'+
+        '</div>'+
+
         '</div></div>';
     }
 
