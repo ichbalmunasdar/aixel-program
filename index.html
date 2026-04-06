@@ -4,9 +4,11 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>AiXel Program — Talentlytica</title>
-  <!-- Firebase SDKs -->
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+  <!-- Google Apps Script endpoint — ganti dengan URL deployment Anda -->
+  <!-- LANGKAH: Deploy Code.gs → copy URL → paste di bawah ini -->
+  <script>
+    var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzAH8GIMaib65odmSmLTksiF1JiJYiNc3uFXjZ-29ClH6DWsrIG2n8lSmFznx03DFv34Q/exec';
+  </script>
   <style>
     /* ── Reset & Base ── */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -1347,64 +1349,85 @@
   }
 
   function submitForm() {
-    // Replace modal body with success state
     const modalBody = document.querySelector('.modal-body');
     const footer    = document.getElementById('modalFooter');
     const stepBar   = document.getElementById('stepBar');
+    const btnSubmit = document.getElementById('btnSubmit');
     const nama      = document.getElementById('f_nama').value.split(' ')[0];
-    const refId     = 'AXL-' + Date.now().toString(36).toUpperCase().slice(-6);
 
-    stepBar.style.display = 'none';
-    footer.style.display  = 'none';
-    modalBody.innerHTML = `
-      <div class="success-state">
-        <div class="success-icon">✓</div>
-        <h3>Pendaftaran Terkirim, ${nama}!</h3>
-        <p>Formulir seleksi AiXel Anda telah berhasil dikirimkan.</p>
-        <p>Tim HR dan Founder akan mereview pendaftaran Anda dan menghubungi melalui email kantor dalam <strong>3–5 hari kerja</strong>.</p>
-        <div class="success-ref">📋 Nomor Referensi: <strong>${refId}</strong></div>
-        <div style="margin-top:28px;">
-          <button class="btn-modal-next" onclick="closeModal()" style="margin:0 auto;">Kembali ke Dashboard</button>
+    // Kumpulkan semua data form
+    const tools    = [...document.querySelectorAll('input[name="tools"]:checked')].map(c => c.value).join(', ');
+    const rating   = document.querySelector('input[name="rating"]:checked');
+    const komitmen = [...document.querySelectorAll('.commit-cb:checked')].map(c => c.value).join(', ');
+
+    const payload = {
+      action:      'pendaftaran',
+      nama:        document.getElementById('f_nama').value,
+      email:       document.getElementById('f_email').value,
+      jabatan:     document.getElementById('f_jabatan').value,
+      departemen:  document.getElementById('f_dept').value,
+      atasan:      document.getElementById('f_atasan').value,
+      tenure:      document.getElementById('f_tenure').value,
+      tools:       tools,
+      kesiapanAI:  rating ? rating.value : '',
+      eksplorasi:  document.getElementById('f_eksplorasi').value,
+      eksperimen:  document.getElementById('f_eksperimen').value,
+      berbagi:     document.getElementById('f_berbagi').value,
+      komitmen:    komitmen,
+      harapan:     document.getElementById('f_harapan').value,
+      catatan:     document.getElementById('f_catatan').value
+    };
+
+    // Tampilkan loading state
+    btnSubmit.disabled = true;
+    btnSubmit.textContent = '⏳ Mengirim...';
+
+    // Kirim ke Google Apps Script
+    fetch(APPS_SCRIPT_URL, {
+      method: 'POST',
+      body:   JSON.stringify(payload)
+    })
+    .then(res => res.json())
+    .then(result => {
+      const refId = result.refId || ('AXL-' + Date.now().toString(36).toUpperCase().slice(-6));
+      stepBar.style.display = 'none';
+      footer.style.display  = 'none';
+      modalBody.innerHTML = `
+        <div class="success-state">
+          <div class="success-icon">✓</div>
+          <h3>Pendaftaran Terkirim, ${nama}!</h3>
+          <p>Formulir seleksi AiXel Anda telah berhasil dikirimkan dan tersimpan di database.</p>
+          <p>Tim HR dan Founder akan mereview pendaftaran Anda dan menghubungi melalui email kantor dalam <strong>3–5 hari kerja</strong>.</p>
+          <div class="success-ref">📋 Nomor Referensi: <strong>${refId}</strong></div>
+          <div style="margin-top:28px;">
+            <button class="btn-modal-next" onclick="closeModal()" style="margin:0 auto;">Kembali ke Dashboard</button>
+          </div>
         </div>
-      </div>
-    `;
-    document.getElementById('modalBox').scrollTop = 0;
+      `;
+      document.getElementById('modalBox').scrollTop = 0;
+    })
+    .catch(err => {
+      btnSubmit.disabled = false;
+      btnSubmit.textContent = '🚀 Submit Pendaftaran';
+      alert('Gagal mengirim pendaftaran. Pastikan koneksi internet Anda aktif dan coba lagi.\n\nError: ' + err.message);
+    });
   }
 
   // ════════════════════════════════════════
-  //  METRICS TRACKER
+  //  METRICS TRACKER — dipindah ke Google Sheets
+  //  Tracking, validasi & reporting dilakukan langsung di Sheets
   // ════════════════════════════════════════
   (function() {
-    // ── Firebase Config (ISI SESUAI PROJECT ANDA) ──
-    var FIREBASE_CONFIG = {
-      apiKey:            "AIzaSyB_n292iBu1f7403bkNgRdrz_xJL5HKiis",
-      authDomain:        "aixel-talentlytica.firebaseapp.com",
-      databaseURL:       "https://aixel-talentlytica-default-rtdb.asia-southeast1.firebasedatabase.app",
-      projectId:         "aixel-talentlytica",
-      storageBucket:     "aixel-talentlytica.firebasestorage.app",
-      messagingSenderId: "217578132341",
-      appId:             "1:217578132341:web:3a50fc741eaef94324f93c"
-    };
-    if (!firebase.apps.length) { firebase.initializeApp(FIREBASE_CONFIG); }
-    var _db = firebase.database();
-    var _ref = { p: _db.ref('aixel/participants'), a: _db.ref('aixel/assessments'), c: _db.ref('aixel/community') };
+    // Tidak ada Firebase — semua data dikelola di Google Sheets
+    var _state = { p: [], a: [], c: [] };
+    var _ref   = {};
 
-    // ── Local state cache (disync oleh Firebase listener) ──
+    // ── Local state cache ──
     var _state = { p: [], a: [], c: [] };
 
     function load(k){ return _state[k] || []; }
-    function save(k,d){
-      _state[k] = d;
-      var obj = {};
-      d.forEach(function(item){ obj[item.id] = item; });
-      _ref[k].set(obj);
-    }
+    function save(k,d){ _state[k] = d; }
     function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
-
-    // ── Real-time listeners → auto re-render saat data berubah ──
-    _ref.p.on('value', function(snap){ _state.p = snap.val() ? Object.values(snap.val()) : []; var t=_activeTab(); if(t==='dashboard'||t==='quarterly') { renderDash(); if(t==='quarterly') renderQuarterly(); } });
-    _ref.a.on('value', function(snap){ _state.a = snap.val() ? Object.values(snap.val()) : []; var t=_activeTab(); if(t==='dashboard') renderDash(); if(t==='monthly') renderMonthly(); if(t==='quarterly') renderQuarterly(); });
-    _ref.c.on('value', function(snap){ _state.c = snap.val() ? Object.values(snap.val()) : []; var t=_activeTab(); if(t==='community') renderCommunity(); if(t==='quarterly') renderQuarterly(); });
     function _activeTab(){ var el=document.querySelector('.mt-tab.active'); return el?el.dataset.tab:'dashboard'; }
 
     function calcTier(gain){
@@ -1690,9 +1713,9 @@
               '<span class="tier-badge tier-below">▼ Below Baseline</span>'+
             '</div>'+
           '</div>'+
-          '<div style="background:#FFF7ED;border:1px solid #FED7AA;border-radius:10px;padding:14px">'+
-            '<p style="font-weight:700;color:#92400E;margin-bottom:6px">☁️ Penyimpanan Data</p>'+
-            '<p style="font-size:.85rem">Data disimpan di <strong>Firebase Realtime Database</strong> (cloud). Data tersinkronisasi secara real-time di semua perangkat dan tidak hilang saat browser di-refresh.</p>'+
+          '<div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:10px;padding:14px">'+
+            '<p style="font-weight:700;color:#065F46;margin-bottom:6px">📊 Penyimpanan Data</p>'+
+            '<p style="font-size:.85rem">Data disimpan di <strong>Google Sheets</strong>. Tracking progress, validasi, dan reporting dilakukan langsung di spreadsheet oleh tim HR.</p>'+
           '</div>'+
         '</div></div>';
     }
