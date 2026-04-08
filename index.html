@@ -923,6 +923,7 @@
       <button class="mt-tab" data-tab="community" onclick="mtTab('community')">🤝 Community Log</button>
       <button class="mt-tab" data-tab="quarterly" onclick="mtTab('quarterly')">📈 Quarterly Review</button>
       <button class="mt-tab" data-tab="guide" onclick="mtTab('guide')">📖 Petunjuk</button>
+      <button class="mt-tab" data-tab="progress" onclick="mtTab('progress')" style="background:linear-gradient(135deg,var(--teal),#0a9396);color:#fff;font-weight:700;border:none">✏️ Update Progress</button>
     </div>
 
     <div id="mt-dashboard" class="mt-panel active"></div>
@@ -930,6 +931,7 @@
     <div id="mt-community" class="mt-panel"></div>
     <div id="mt-quarterly" class="mt-panel"></div>
     <div id="mt-guide" class="mt-panel"></div>
+    <div id="mt-progress" class="mt-panel"></div>
   </div>
 </section>
 
@@ -1470,6 +1472,7 @@
       if(name==='community') renderCommunity();
       if(name==='quarterly') renderQuarterly();
       if(name==='guide')     renderGuide();
+      if(name==='progress')  renderProgress();
     };
 
     // ── Dashboard ──
@@ -2103,6 +2106,350 @@
         '</div>'+
 
         '</div></div>';
+    }
+
+    // ═══════════════════════════════════════════════════════
+
+    var _progressState = { found: false, email: '', existing: null };
+
+    function renderProgress() {
+      var defPeriod = (function(){ var d=new Date(); return d.getFullYear()+'-'+(d.getMonth()<9?'0':'')+(d.getMonth()+1); })();
+      document.getElementById('mt-progress').innerHTML =
+        '<div class="mt-form-box">' +
+          '<h4 style="margin-bottom:4px">✏️ Update Progress Bulanan</h4>' +
+          '<p style="font-size:.83rem;color:var(--soft);margin-bottom:20px">Peserta AiXel mengisi progress setiap akhir bulan. Data otomatis tersimpan di spreadsheet.</p>' +
+
+          // ── Email lookup ──
+          '<div id="upg_lookup_box" style="background:#EFF6FF;border:1px solid #BFDBFE;border-radius:10px;padding:16px;margin-bottom:16px">' +
+            '<label style="font-weight:700;font-size:.88rem;color:var(--navy);display:block;margin-bottom:8px">📧 Email Peserta (akun Talentlytica)</label>' +
+            '<div style="display:flex;gap:8px;align-items:center">' +
+              '<input id="upg_email" type="email" placeholder="nama@talentlytica.com" ' +
+                'style="flex:1;padding:10px 12px;border:1.5px solid #93C5FD;border-radius:8px;font-size:.9rem;outline:none" ' +
+                'onkeydown="if(event.key===\'Enter\')upgLookup()">' +
+              '<button onclick="upgLookup()" id="upg_lookup_btn" ' +
+                'style="padding:10px 18px;background:var(--teal);color:#fff;border:none;border-radius:8px;font-weight:700;font-size:.88rem;cursor:pointer;white-space:nowrap">' +
+                '🔍 Cari Data</button>' +
+            '</div>' +
+            '<div id="upg_lookup_msg" style="margin-top:8px;font-size:.82rem"></div>' +
+          '</div>' +
+
+          // ── Form (tersembunyi hingga lookup berhasil) ──
+          '<div id="upg_form_wrap" style="display:none">' +
+
+            // Status banner
+            '<div id="upg_status_banner" style="border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:.85rem"></div>' +
+
+            // Info dasar
+            '<div class="mt-form-grid" style="margin-bottom:14px">' +
+              '<div class="mt-form-group"><label>Nama Lengkap *</label><input id="upg_nama" placeholder="Nama sesuai akun kantor"></div>' +
+              '<div class="mt-form-group"><label>Jabatan / Role *</label><input id="upg_jabatan" placeholder="Contoh: Product Manager"></div>' +
+              '<div class="mt-form-group"><label>Atasan Langsung</label><input id="upg_atasan" placeholder="Nama atasan yang menyetujui"></div>' +
+              '<div class="mt-form-group"><label>Bulan / Periode *</label><input id="upg_periode" type="month" value="'+defPeriod+'"></div>' +
+            '</div>' +
+
+            // A. Metrics Produktivitas
+            '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:16px;margin-bottom:14px">' +
+              '<h5 style="color:var(--navy);margin-bottom:4px">📊 A. Metrics Produktivitas</h5>' +
+              '<p style="font-size:.78rem;color:var(--soft);margin-bottom:12px">' +
+                '<strong>Baseline</strong> = nilai awal sebelum pakai AI (diisi sekali, otomatis terkunci setelah itu). ' +
+                '<strong>Bulan Ini</strong> = nilai aktual bulan ini.' +
+              '</p>' +
+              '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.85rem">' +
+              '<thead><tr style="background:#e8f4f8">' +
+                '<th style="text-align:left;padding:8px 10px;color:var(--navy)">Metrics</th>' +
+                '<th style="padding:8px 6px;color:var(--soft)">Satuan</th>' +
+                '<th style="padding:8px 6px;color:var(--navy)">Baseline</th>' +
+                '<th style="padding:8px 6px;color:var(--navy)">Bulan Ini</th>' +
+                '<th style="padding:8px 6px;color:var(--navy)">Gain %</th>' +
+              '</tr></thead><tbody>' +
+              (function(){
+                return METRICS_DEF.map(function(m){
+                  return '<tr>' +
+                    '<td style="padding:8px 10px;font-weight:600">'+m.label+'</td>' +
+                    '<td style="padding:8px 6px;text-align:center;color:var(--soft);font-size:.78rem">'+m.unit+'</td>' +
+                    '<td style="padding:8px 6px;text-align:center">' +
+                      '<input id="upg_'+m.key+'_b" type="number" step="any" placeholder="—" ' +
+                        'style="width:72px;padding:5px;border:1.5px solid #ddd;border-radius:6px;text-align:center;font-size:.85rem" ' +
+                        'oninput="upgPreviewGain()">' +
+                    '</td>' +
+                    '<td style="padding:8px 6px;text-align:center">' +
+                      '<input id="upg_'+m.key+'_c" type="number" step="any" placeholder="—" ' +
+                        'style="width:72px;padding:5px;border:1.5px solid #ddd;border-radius:6px;text-align:center;font-size:.85rem" ' +
+                        'oninput="upgPreviewGain()">' +
+                    '</td>' +
+                    '<td style="padding:8px 6px;text-align:center;font-weight:700" id="upg_'+m.key+'_gain">—</td>' +
+                  '</tr>';
+                }).join('');
+              })() +
+              '</tbody></table></div>' +
+              '<div id="upg_avg_preview" style="margin-top:10px;padding:8px 14px;background:#fff;border-radius:8px;border:1px solid #e2e8f0;font-size:.85rem;display:none">' +
+                '<span style="color:var(--soft)">Avg Gain: </span><strong id="upg_avg_val" style="color:var(--teal)"></strong>&nbsp;&nbsp;' +
+                '<span id="upg_tier_badge"></span>' +
+              '</div>' +
+            '</div>' +
+
+            // B. Aktivitas AI
+            '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:16px;margin-bottom:14px">' +
+              '<h5 style="color:var(--navy);margin-bottom:12px">🤖 B. Aktivitas AI Bulan Ini</h5>' +
+              '<div class="mt-form-group" style="margin-bottom:10px"><label>Tools AI yang digunakan</label>' +
+                '<textarea id="upg_tools" rows="2" placeholder="Contoh: ChatGPT (daily), Copilot (3x/week)..." style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:8px;font-size:.85rem;resize:vertical;font-family:inherit"></textarea>' +
+              '</div>' +
+              '<div class="mt-form-group" style="margin-bottom:10px"><label>Use case / workflow baru yang diterapkan</label>' +
+                '<textarea id="upg_usecase" rows="2" placeholder="Deskripsikan 1–3 use case konkret..." style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:8px;font-size:.85rem;resize:vertical;font-family:inherit"></textarea>' +
+              '</div>' +
+              '<div class="mt-form-group" style="margin-bottom:10px"><label>Eksperimen yang dicoba</label>' +
+                '<textarea id="upg_exp" rows="2" placeholder="Ceritakan eksperimen, hasilnya, dan pelajarannya..." style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:8px;font-size:.85rem;resize:vertical;font-family:inherit"></textarea>' +
+              '</div>' +
+              '<div class="mt-form-group"><label>Teknik prompting baru yang dikuasai</label>' +
+                '<textarea id="upg_prompt" rows="2" placeholder="Deskripsikan teknik dan manfaatnya..." style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:8px;font-size:.85rem;resize:vertical;font-family:inherit"></textarea>' +
+              '</div>' +
+            '</div>' +
+
+            // C. Refleksi
+            '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:16px;margin-bottom:14px">' +
+              '<h5 style="color:var(--navy);margin-bottom:12px">💡 C. Refleksi &amp; Rencana</h5>' +
+              '<div class="mt-form-grid" style="gap:12px">' +
+                '<div class="mt-form-group"><label>Highlight terbaik bulan ini</label>' +
+                  '<textarea id="upg_highlight" rows="2" placeholder="Pencapaian AI terbesar kamu bulan ini..." style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:8px;font-size:.85rem;resize:vertical;font-family:inherit"></textarea>' +
+                '</div>' +
+                '<div class="mt-form-group"><label>Hambatan yang dihadapi</label>' +
+                  '<textarea id="upg_hambatan" rows="2" placeholder="Apa yang paling sulit? Bagaimana mengatasinya?..." style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:8px;font-size:.85rem;resize:vertical;font-family:inherit"></textarea>' +
+                '</div>' +
+                '<div class="mt-form-group"><label>Rencana eksperimen bulan depan</label>' +
+                  '<textarea id="upg_rencana" rows="2" placeholder="Apa yang ingin dicoba bulan berikutnya?..." style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:8px;font-size:.85rem;resize:vertical;font-family:inherit"></textarea>' +
+                '</div>' +
+              '</div>' +
+            '</div>' +
+
+            // D. Kontribusi
+            '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:16px;margin-bottom:20px">' +
+              '<h5 style="color:var(--navy);margin-bottom:12px">🤝 D. Kontribusi Komunitas</h5>' +
+              '<div class="mt-form-grid">' +
+                '<div class="mt-form-group"><label>Jumlah kontribusi bulan ini</label>' +
+                  '<input id="upg_kontrib" type="number" min="0" placeholder="0">' +
+                '</div>' +
+                '<div class="mt-form-group"><label>Kontribusi terbaik bulan ini</label>' +
+                  '<input id="upg_kontrib_best" placeholder="Deskripsikan satu kontribusi paling berdampak...">' +
+                '</div>' +
+              '</div>' +
+            '</div>' +
+
+            '<button id="upg_submit_btn" onclick="upgSubmit()" ' +
+              'style="width:100%;padding:13px;background:linear-gradient(135deg,var(--teal),#0a9396);color:#fff;border:none;border-radius:10px;font-size:1rem;font-weight:700;cursor:pointer">' +
+              '💾 Simpan Progress Bulan Ini' +
+            '</button>' +
+            '<div id="upg_submit_msg" style="margin-top:12px;text-align:center;font-size:.85rem"></div>' +
+
+          '</div>' + // end upg_form_wrap
+
+          // History
+          '<div id="upg_history_wrap" style="display:none;margin-top:24px">' +
+            '<h5 style="color:var(--navy);margin-bottom:12px;font-size:.95rem">📋 Riwayat Submit</h5>' +
+            '<div id="upg_history_table"></div>' +
+          '</div>' +
+
+        '</div>';
+    }
+
+    // Lookup: cari data peserta berdasarkan email
+    window.upgLookup = function() {
+      var email = (document.getElementById('upg_email').value || '').trim().toLowerCase();
+      if (!email) { document.getElementById('upg_lookup_msg').innerHTML='<span style="color:#EF4444">⚠️ Masukkan email Anda terlebih dahulu.</span>'; return; }
+
+      var btn = document.getElementById('upg_lookup_btn');
+      var msg = document.getElementById('upg_lookup_msg');
+      btn.disabled = true; btn.textContent = '⏳ Mencari...';
+      msg.innerHTML = '';
+
+      fetch(APPS_SCRIPT_URL + '?action=getMetrics&email=' + encodeURIComponent(email))
+        .then(function(r){ return r.json(); })
+        .then(function(res) {
+          btn.disabled = false; btn.textContent = '🔍 Cari Data';
+
+          if (!res.registered && res.status === 'not_found') {
+            msg.innerHTML = '<span style="color:#EF4444">❌ Email <strong>' + email + '</strong> tidak ditemukan dalam daftar peserta AiXel. Pastikan Anda sudah mendaftar.</span>';
+            return;
+          }
+
+          _progressState.email    = email;
+          _progressState.existing = res.current || null;
+          _progressState.found    = !!res.current;
+
+          // Tampilkan form
+          document.getElementById('upg_form_wrap').style.display = 'block';
+
+          // Status banner
+          var banner = document.getElementById('upg_status_banner');
+          if (res.current) {
+            var sc = res.current.submit_count || 1;
+            banner.style.cssText = 'background:#F0FDF4;border:1px solid #BBF7D0;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:.85rem';
+            banner.innerHTML = '✅ <strong>Data ditemukan</strong> — ' + (res.current.nama||email) +
+              ' · Submit ke-<strong>' + sc + '</strong> · Terakhir diperbarui: <strong>' + (res.current.updated_at||'—') + '</strong><br>' +
+              '<span style="font-size:.78rem;color:#065F46">Baseline sudah terkunci. Isi nilai <em>Bulan Ini</em> saja.</span>';
+            upgPrefill(res.current);
+          } else {
+            banner.style.cssText = 'background:#EFF6FF;border:1px solid #BFDBFE;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:.85rem';
+            banner.innerHTML = '🆕 <strong>Data pertama</strong> — Selamat datang! Isi <strong>Baseline</strong> (kondisi sebelum pakai AI) dan nilai <strong>Bulan Ini</strong>.';
+            if (res.participantName) document.getElementById('upg_nama').value = res.participantName;
+          }
+
+          msg.innerHTML = '';
+
+          // Tampilkan history jika ada
+          if (res.history && res.history.length) {
+            upgRenderHistory(res.history);
+          }
+        })
+        .catch(function(err) {
+          btn.disabled = false; btn.textContent = '🔍 Cari Data';
+          msg.innerHTML = '<span style="color:#EF4444">❌ Gagal terhubung. Cek koneksi dan coba lagi.</span>';
+        });
+    };
+
+    // Prefill form dengan data existing
+    function upgPrefill(d) {
+      if (!d) return;
+      if (d.nama)    document.getElementById('upg_nama').value    = d.nama;
+      if (d.jabatan) document.getElementById('upg_jabatan').value = d.jabatan;
+      if (d.atasan)  document.getElementById('upg_atasan').value  = d.atasan;
+
+      METRICS_DEF.forEach(function(m) {
+        var bEl = document.getElementById('upg_'+m.key+'_b');
+        var cEl = document.getElementById('upg_'+m.key+'_c');
+        if (bEl && d['m'+m.key.slice(1)+'_baseline'] != null && d['m'+m.key.slice(1)+'_baseline'] !== '') {
+          bEl.value    = d['m'+m.key.slice(1)+'_baseline'];
+          bEl.readOnly = true;
+          bEl.style.background = '#f1f5f9';
+          bEl.style.color      = '#64748b';
+          bEl.style.cursor     = 'not-allowed';
+        }
+        // Prefill field name correction: keys in sheet are m1_baseline, m2_baseline, etc.
+        var bKey = m.key + '_baseline'; // e.g. m1_baseline
+        var cKey = m.key + '_current';
+        if (bEl && d[bKey] != null && d[bKey] !== '') {
+          bEl.value    = d[bKey];
+          bEl.readOnly = true;
+          bEl.style.background = '#f1f5f9';
+          bEl.style.color      = '#64748b';
+          bEl.style.cursor     = 'not-allowed';
+        }
+        if (cEl && d[cKey] != null && d[cKey] !== '') {
+          cEl.value = d[cKey];
+        }
+      });
+
+      // Isi bidang teks
+      var fields = ['tools','usecase','exp','prompt','highlight','hambatan','rencana','kontrib','kontrib_best'];
+      fields.forEach(function(f){
+        var el = document.getElementById('upg_'+f);
+        if (el && d[f]) el.value = d[f];
+      });
+
+      upgPreviewGain();
+    }
+
+    window.upgPreviewGain = function() {
+      var gains = METRICS_DEF.map(function(m) {
+        var b = parseFloat(document.getElementById('upg_'+m.key+'_b').value);
+        var c = parseFloat(document.getElementById('upg_'+m.key+'_c').value);
+        var g = calcMetricGain(b, c, m.dir);
+        var el = document.getElementById('upg_'+m.key+'_gain');
+        if (el) {
+          if (g !== null) {
+            var pct = (g*100).toFixed(1);
+            el.style.color = g >= 0 ? '#10B981' : '#EF4444';
+            el.textContent = (g >= 0 ? '+' : '') + pct + '%';
+          } else { el.textContent = '—'; el.style.color = 'var(--soft)'; }
+        }
+        return g;
+      });
+      var avg = avgGain(gains);
+      var preview = document.getElementById('upg_avg_preview');
+      if (avg !== null && preview) {
+        preview.style.display = 'block';
+        var pct = (avg*100).toFixed(1);
+        document.getElementById('upg_avg_val').textContent = (avg >= 0 ? '+' : '') + pct + '%';
+        var tier = calcTier(avg*100);
+        document.getElementById('upg_tier_badge').innerHTML = '<span class="tier-badge '+tier.cls+'">'+tier.stars+' '+tier.label+'</span>';
+      }
+    };
+
+    window.upgSubmit = function() {
+      var email   = _progressState.email;
+      var nama    = (document.getElementById('upg_nama').value || '').trim();
+      var jabatan = (document.getElementById('upg_jabatan').value || '').trim();
+      var periode = (document.getElementById('upg_periode').value || '').trim();
+      if (!email || !nama || !periode) { alert('Email, Nama, dan Periode wajib diisi.'); return; }
+
+      var hasMetric = false;
+      var payload = { action: 'upsertMetrics', email: email, nama: nama, jabatan: jabatan,
+        atasan: (document.getElementById('upg_atasan').value||'').trim(),
+        periode: periode };
+
+      METRICS_DEF.forEach(function(m) {
+        var bEl = document.getElementById('upg_'+m.key+'_b');
+        var cEl = document.getElementById('upg_'+m.key+'_c');
+        if (bEl && bEl.value !== '') { payload[m.key+'_baseline'] = bEl.value; hasMetric = true; }
+        if (cEl && cEl.value !== '') { payload[m.key+'_current']  = cEl.value; hasMetric = true; }
+      });
+      if (!hasMetric) { alert('Isi minimal satu nilai metrics produktivitas.'); return; }
+
+      ['tools','usecase','exp','prompt','highlight','hambatan','rencana','kontrib','kontrib_best'].forEach(function(f){
+        var el = document.getElementById('upg_'+f);
+        if (el) payload[f] = el.value;
+      });
+
+      var btn = document.getElementById('upg_submit_btn');
+      var msgEl = document.getElementById('upg_submit_msg');
+      btn.disabled = true; btn.textContent = '⏳ Menyimpan...';
+      msgEl.innerHTML = '';
+
+      fetch(APPS_SCRIPT_URL, { method: 'POST', body: JSON.stringify(payload) })
+        .then(function(r){ return r.json(); })
+        .then(function(res) {
+          btn.disabled = false; btn.textContent = '💾 Simpan Progress Bulan Ini';
+          if (res.status === 'success') {
+            msgEl.innerHTML =
+              '<div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:8px;padding:12px 16px;text-align:left">' +
+                '✅ <strong>' + res.message + '</strong>' +
+                (res.avgGain ? '<br><span style="color:var(--soft);font-size:.82rem">Avg Gain bulan ini: <strong style="color:var(--teal)">' + res.avgGain + '</strong></span>' : '') +
+              '</div>';
+            // Refresh data setelah submit
+            setTimeout(function(){ upgLookup(); }, 1500);
+          } else {
+            msgEl.innerHTML = '<span style="color:#EF4444">❌ ' + (res.message||'Gagal menyimpan. Coba lagi.') + '</span>';
+          }
+        })
+        .catch(function(err) {
+          btn.disabled = false; btn.textContent = '💾 Simpan Progress Bulan Ini';
+          msgEl.innerHTML = '<span style="color:#EF4444">❌ Koneksi gagal: ' + err.message + '</span>';
+        });
+    };
+
+    function upgRenderHistory(history) {
+      var wrap  = document.getElementById('upg_history_wrap');
+      var table = document.getElementById('upg_history_table');
+      if (!wrap || !table) return;
+      wrap.style.display = 'block';
+      var rows = history.slice().reverse().map(function(h) {
+        var gain = h.avg_gain || '—';
+        var gainColor = gain !== '—' && parseFloat(gain) >= 0 ? '#10B981' : '#EF4444';
+        return '<tr style="border-bottom:1px solid #f1f5f9">' +
+          '<td style="padding:8px 10px;font-size:.82rem;color:var(--soft)">' + (h.timestamp||'').toString().slice(0,16) + '</td>' +
+          '<td style="padding:8px 10px;font-size:.85rem;font-weight:600">' + (h.periode||'—') + '</td>' +
+          '<td style="padding:8px 10px;text-align:center;font-weight:700;color:'+gainColor+'">' + gain + '</td>' +
+          '<td style="padding:8px 10px;font-size:.82rem;color:var(--soft)">' + (h.highlight||'—').toString().slice(0,60) + '</td>' +
+        '</tr>';
+      }).join('');
+      table.innerHTML =
+        '<table style="width:100%;border-collapse:collapse;font-size:.85rem">' +
+        '<thead><tr style="background:#e8f4f8">' +
+          '<th style="padding:8px 10px;text-align:left;color:var(--navy)">Waktu</th>' +
+          '<th style="padding:8px 10px;text-align:left;color:var(--navy)">Periode</th>' +
+          '<th style="padding:8px 10px;text-align:center;color:var(--navy)">Avg Gain</th>' +
+          '<th style="padding:8px 10px;text-align:left;color:var(--navy)">Highlight</th>' +
+        '</tr></thead>' +
+        '<tbody>' + rows + '</tbody></table>';
     }
 
     // ── Init ──
